@@ -4,6 +4,8 @@
 
 **The AI Language Learning Kit for Claude Code and others**
 
+> **Personal fork.** This is [LuFennema](https://github.com/LuFennema)'s fork of [m98/fluent](https://github.com/m98/fluent) with local **voice features** added — listening drills, pronunciation scoring and spoken conversation, all on-device (Kokoro/Piper TTS, Whisper, wav2vec2 phoneme scoring). Maintained for personal use; the upstream project and its author are credited below and in [CHANGELOG.md](CHANGELOG.md). If you want the voice features upstream, open an issue there or cherry-pick from `feature/voice-audio`.
+
 *A comprehensive set of rules, guidance, and intelligent tracking systems that transform Claude Code into your personal language tutor. Master any language through adaptive practice powered by proven cognitive science—spaced repetition, active recall, and progress tracking that learns from you.*
 
 https://github.com/user-attachments/assets/66d68aad-210a-452d-b405-b58c13f42f53
@@ -17,7 +19,7 @@ https://github.com/user-attachments/assets/66d68aad-210a-452d-b405-b58c13f42f53
 ### 1. Install
 
 ```bash
-claude plugin marketplace add m98/fluent && claude plugin install fluent@m98
+claude plugin marketplace add LuFennema/fluent && claude plugin install fluent@lufennema
 ```
 
 One line. Registers the marketplace, installs the plugin. Works globally from any directory after this.
@@ -45,9 +47,9 @@ That's it.
 ### Verify, update, uninstall
 
 ```bash
-claude plugin list                    # expect: fluent@m98  enabled
-claude plugin update fluent@m98       # pull latest version
-claude plugin uninstall fluent@m98    # remove entirely
+claude plugin list                    # expect: fluent@lufennema  enabled
+claude plugin update fluent@lufennema       # pull latest version
+claude plugin uninstall fluent@lufennema    # remove entirely
 ```
 
 ### Alternative: git clone
@@ -55,7 +57,7 @@ claude plugin uninstall fluent@m98    # remove entirely
 Prefer to hack on the skills or keep per-project state?
 
 ```bash
-git clone https://github.com/m98/fluent.git
+git clone https://github.com/LuFennema/fluent.git
 cd fluent
 claude          # launch from repo root
 /fluent-setup
@@ -306,7 +308,7 @@ The AI follows these guides:
 ### Interface Layer
 
 - **Skills** (`.claude/skills/`) — 15 skills total. 11 learner-facing (`/fluent-setup`, `/fluent-learn`, `/fluent-vocab`, `/fluent-writing`, `/fluent-speaking`, `/fluent-reading`, `/fluent-review`, `/fluent-listening`, `/fluent-pronunciation`, `/fluent-voice-setup`, `/fluent-progress`) run when you invoke them. 4 helper skills (`/fluent-sm2-calculator`, `/fluent-feedback-formatter`, `/fluent-db-updater`, `/fluent-session-analyzer`) auto-load whenever Claude needs them during a session — and are also directly `/`-invokable if you want to read the reference.
-- **Plugin manifests** (`.claude-plugin/`) — `plugin.json` + `marketplace.json` make Fluent installable via `/plugin marketplace add m98/fluent`.
+- **Plugin manifests** (`.claude-plugin/`) — `plugin.json` + `marketplace.json` make Fluent installable via `/plugin marketplace add LuFennema/fluent`.
 - **Automatic Hooks** (`.claude/hooks/`) — SessionStart welcome, SessionEnd backups, PostToolUse JSON validation + backups, PreCompact safety backup. Both `hooks.json` (plugin mode) and `.claude/settings.json` (clone mode) wire them up.
 - **Session Results** (`/results/`) — Detailed practice logs per session, parsed by `fluent-session-analyzer` to plan future sessions.
 
@@ -577,11 +579,11 @@ The PostToolUse hook exits with status 2 if it finds malformed JSON. The last 10
 Restart Claude Code. If still missing, verify install:
 
 ```bash
-claude plugin list                              # should show fluent@m98 enabled
-claude plugin validate fluent@m98
+claude plugin list                              # should show fluent@lufennema enabled
+claude plugin validate fluent@lufennema
 ```
 
-Or from inside a session: `/plugin list`. If the plugin is disabled, enable it: `claude plugin enable fluent@m98`.
+Or from inside a session: `/plugin list`. If the plugin is disabled, enable it: `claude plugin enable fluent@lufennema`.
 
 ---
 
@@ -627,7 +629,7 @@ But feel free to experiment and share your findings!
 *Start your language learning journey today!* 🚀
 
 ```bash
-git clone https://github.com/m98/fluent.git
+git clone https://github.com/LuFennema/fluent.git
 cd fluent
 claude
 /fluent-setup

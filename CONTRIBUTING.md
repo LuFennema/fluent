@@ -45,7 +45,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 1. **Fork the repository:**
    ```bash
-   git clone https://github.com/m98/fluent.git
+   git clone https://github.com/LuFennema/fluent.git
    cd fluent
    ```
 

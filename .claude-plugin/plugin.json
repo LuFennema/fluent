@@ -3,11 +3,11 @@
   "version": "0.4.0",
   "description": "Fluent — AI Language Learning Kit. Personal AI tutor for any target language. Uses spaced repetition (SM-2), active recall, adaptive difficulty, and tracking across 6 databases. Daily practice: /fluent-review, /fluent-vocab, /fluent-writing, /fluent-speaking, /fluent-reading, /fluent-listening, /fluent-pronunciation, /fluent-learn. Voice features (local TTS + Whisper) via /fluent-voice-setup. Start with /fluent-setup.",
   "author": {
-    "name": "Mohammad Kermani",
-    "url": "https://github.com/m98"
+    "name": "Mohammad Kermani (upstream) · voice features by LuFennema",
+    "url": "https://github.com/m98/fluent"
   },
-  "homepage": "https://github.com/m98/fluent",
-  "repository": "https://github.com/m98/fluent",
+  "homepage": "https://github.com/LuFennema/fluent",
+  "repository": "https://github.com/LuFennema/fluent",
   "license": "MIT",
   "keywords": [
     "language-learning",

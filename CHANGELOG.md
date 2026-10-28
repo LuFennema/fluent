@@ -4,7 +4,11 @@ All notable changes to Fluent will be documented in this file.
 
 ## [0.4.0] — 2026-10-28
 
+_Personal fork of [m98/fluent](https://github.com/m98/fluent) by LuFennema. Everything below 0.3.0 is upstream's work._
+
 ### Added
+
+- Marketplace renamed `m98` → `lufennema`; install with `claude plugin marketplace add LuFennema/fluent && claude plugin install fluent@lufennema`. Remove the upstream marketplace first if you had it (`claude plugin marketplace remove m98`).
 
 - **Voice features — local text-to-speech, microphone and speech-to-text.**
   New module `.claude/hooks/fluent_voice.py` with three CLIs: `voice-say.py`
@@ -134,7 +138,7 @@ read by `fluent-session-analyzer` — no migration required.
 ### Migration
 
 ```bash
-claude plugin update fluent@m98
+claude plugin update fluent@lufennema
 ```
 
 Then use the new slash commands. Your data (`~/.claude/fluent-data/` or
