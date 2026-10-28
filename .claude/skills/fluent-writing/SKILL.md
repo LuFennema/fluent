@@ -1,8 +1,7 @@
 ---
 name: fluent-writing
-description: Run an interactive writing practice session (emails, letters, forms, short texts) with systematic error analysis, category-tagged corrections, and detailed feedback. Triggered only when the learner types /fluent-writing. Selects a scenario matched to mastery, lets the learner compose, then analyzes grammar, register, vocabulary, structure, and spelling before updating all databases.
+description: Run an interactive writing practice session (emails, letters, forms, short texts) with systematic error analysis, category-tagged corrections, and detailed feedback. Triggered when the learner types /fluent-writing or picks it from the /fluent-learn menu. Selects a scenario matched to mastery, lets the learner compose, then analyzes grammar, register, vocabulary, structure, and spelling before updating all databases.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Writing Practice Session
@@ -13,7 +12,7 @@ Full-text writing practice with systematic correction. One scenario per session,
 
 ## When to Use
 
-Trigger this skill only when the learner types `/fluent-writing`. The skill is gated with `disable-model-invocation: true` — a 15-20 min interactive session with DB writes should never start from an ambiguous prompt.
+Trigger this skill when the learner types `/fluent-writing`, picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Skip this skill in favor of `/fluent-vocab` if the learner has not yet hit mastery 2 in basic vocabulary — writing needs a minimum word bank.
 
@@ -217,7 +216,7 @@ Learner: "Hallo, Ik schrijf je omdat ik kan niet komen op donderdag. Ik ben ziek
 - **Wait for the full answer** before correcting.
 - **Severity tagging is mandatory.** Fed into `mistakes-db` and drives spaced repetition priority.
 - **Always save the session file** in `/results/` for later analysis by `fluent-session-analyzer`.
-- **Never auto-invoke.** This skill is gated; must fire only on explicit `/fluent-writing`.
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.
 
 ## Language Reference
 

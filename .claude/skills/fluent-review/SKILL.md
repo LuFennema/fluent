@@ -1,8 +1,7 @@
 ---
 name: fluent-review
-description: Run today's spaced-repetition review queue — items scheduled by SM-2 that need reinforcement before the learner forgets them. Triggered only when the learner types /fluent-review. Pulls due items from spaced-repetition.review_queue.today, generates a targeted exercise for each, evaluates the response, updates SM-2 parameters, and reshelves items into the correct future queue.
+description: Run today's spaced-repetition review queue — items scheduled by SM-2 that need reinforcement before the learner forgets them. Triggered when the learner types /fluent-review or picks it from the /fluent-learn menu. Pulls due items from spaced-repetition.review_queue.today, generates a targeted exercise for each, evaluates the response, updates SM-2 parameters, and reshelves items into the correct future queue.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Spaced-Repetition Review Session
@@ -13,7 +12,7 @@ Replay items the learner learned before, timed so they hit just before the forge
 
 ## When to Use
 
-Trigger this skill only when the learner types `/fluent-review`. The skill is gated with `disable-model-invocation: true` — mutating SM-2 state from a misread prompt would cascade through every future session.
+Trigger this skill when the learner types `/fluent-review`, picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Skip this skill when the queue is empty — suggest `/fluent-vocab` or `/fluent-learn` instead.
 
@@ -205,7 +204,7 @@ Learner: "niet"
 ## Critical Rules
 
 - **Daily.** The whole system assumes the learner runs `/fluent-review` every day. Missing a day breaks the intended spacing.
-- **Never auto-invoke.** Gated; must fire only on explicit `/fluent-review`. Long interactive + SM-2 mutation.
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.
 - **One item at a time.** Rushing = false positives.
 - **Let the learner struggle.** If they don't remember, that's useful data (quality 0-2). The algorithm needs honest signals.
 - **Never hand-edit `spaced-repetition.json`.** Queue is rebuilt on every `update-db.py` call.

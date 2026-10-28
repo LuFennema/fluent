@@ -18,6 +18,8 @@ Options:
     --file          transcribe an existing WAV instead of recording
     --keep          keep the WAV file (default: deleted after transcription)
     --countdown     seconds to wait (printing a countdown to stderr) before recording
+                    A high tick plays when recording starts and a lower one when it
+                    stops (FLUENT_MIC_TICK=0 to turn off).
     --prompt        words/names to bias the transcription toward (session vocabulary);
                     use in conversation, NOT with --expect (it would mask pronunciation errors)
     --phonemes      with --expect: also score at the phone level (needs espeak-ng or
@@ -55,7 +57,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fluent_paths import data_dir, force_utf8_io  # noqa: E402
-from fluent_voice import emit, record, score_against, transcribe  # noqa: E402
+from fluent_voice import emit, record, score_against, tick, transcribe  # noqa: E402
 import fluent_phonemes  # noqa: E402
 
 
@@ -97,9 +99,11 @@ def main() -> int:
             sys.stderr.write(f"🎙️  recording in {n}...\n")
             sys.stderr.flush()
             time.sleep(1)
+        tick("start")
         sys.stderr.write("🎙️  speak now\n")
         sys.stderr.flush()
         rec = record(max_seconds=a.max_seconds, silence_seconds=a.silence)
+        tick("stop")
         if not rec.get("ok"):
             rec["hint"] = "run voice-doctor.py to see which microphone backends are available"
             emit(rec)

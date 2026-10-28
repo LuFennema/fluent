@@ -1,8 +1,7 @@
 ---
 name: fluent-speaking
-description: Run an interactive conversation session — free-flowing dialogue, role-plays, and opinion questions prioritizing communication over perfect grammar. Typed by default; `/fluent-speaking voice` makes it spoken — the tutor's lines are played with local text-to-speech and the learner answers into the microphone (transcribed locally with Whisper). Triggered only when the learner types /fluent-speaking. Asks questions one at a time in the target language, evaluates clarity and naturalness first and grammar second, and updates all databases at the end.
+description: Run an interactive conversation session — free-flowing dialogue, role-plays, and opinion questions prioritizing communication over perfect grammar. Typed by default; `/fluent-speaking voice` makes it spoken — the tutor's lines are played with local text-to-speech and the learner answers into the microphone (transcribed locally with Whisper). Triggered when the learner types /fluent-speaking or picks it from the /fluent-learn menu. Asks questions one at a time in the target language, evaluates clarity and naturalness first and grammar second, and updates all databases at the end.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Speaking Practice (Typed or Voice)
@@ -18,7 +17,7 @@ Two modes:
 
 ## When to Use
 
-Trigger this skill only when the learner types `/fluent-speaking` (optionally followed by `voice` or `typed`). The skill is gated with `disable-model-invocation: true` — 15-20 min interactive session with DB writes should never start from an ambiguous prompt.
+Trigger this skill when the learner types `/fluent-speaking` (optionally followed by `voice` or `typed`), picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Skip this skill below A1 mastery 2 — the learner needs a basic word bank and verb conjugations first (run `/fluent-vocab` a few times).
 
@@ -266,7 +265,7 @@ Learner: "Ik ben Mohammad. Ik kom van Iran maar ik woon nu in Nederland."
 - **Don't over-correct.** A speaking session with 20 red marks kills confidence.
 - **Voice mode: show the transcript, trust the learner over the recognizer.** If they say the transcript is wrong, take their word and re-record or let them type.
 - **Voice mode: speak every target-language line you print.** Half-spoken sessions feel broken.
-- **Never auto-invoke.** Gated; must fire only on explicit `/fluent-speaking`.
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.
 
 ## Language Reference
 

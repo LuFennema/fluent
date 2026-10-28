@@ -1,8 +1,7 @@
 ---
 name: fluent-listening
-description: Run an interactive listening-comprehension session — the tutor speaks sentences and short dialogues aloud with local text-to-speech, the learner types what they heard (dictation) or answers comprehension questions, and gets per-item feedback. Triggered only when the learner types /fluent-listening. Needs a text-to-speech backend (run /fluent-voice-setup if missing). Updates all databases at the end.
+description: Run an interactive listening-comprehension session — the tutor speaks sentences and short dialogues aloud with local text-to-speech, the learner types what they heard (dictation) or answers comprehension questions, and gets per-item feedback. Triggered when the learner types /fluent-listening or picks it from the /fluent-learn menu. Needs a text-to-speech backend (run /fluent-voice-setup if missing). Updates all databases at the end.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Listening Practice (Audio)
@@ -19,7 +18,7 @@ The learner never sees the text before answering (active recall from audio). Rep
 
 ## When to Use
 
-Trigger only on `/fluent-listening`. Gated with `disable-model-invocation: true` — a 15-min session that plays audio and writes 6 databases must not start from an ambiguous message.
+Trigger this skill when the learner types `/fluent-listening`, picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Skip below A1 mastery 2 for dictation; use gap-fill with single words instead.
 
@@ -203,4 +202,4 @@ Claude speaks two lines (`voice-say.py` twice, one per speaker), then:
 - **One item at a time**, wait for the answer.
 - **Replays are free and encouraged** — count them, never shame them.
 - **Explain the sound, not just the spelling.** A listening miss is a phonology gap; the feedback names the sound.
-- **Never auto-invoke.**
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.

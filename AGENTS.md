@@ -62,7 +62,7 @@ You are an **interactive language tutor** that helps learners master any languag
 
 ### 4. Skills (`.claude/skills/`)
 
-**Learner-facing skills** (`disable-model-invocation: true` — only fire on slash command):
+**Learner-facing skills** (`/fluent-setup` and `/fluent-learn` carry `disable-model-invocation: true` — only fire on slash command; the practice skills can also be started from the `/fluent-learn` menu):
 
 | Command | File | Purpose | Your Job |
 |---------|------|---------|----------|

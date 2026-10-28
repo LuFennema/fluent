@@ -1,8 +1,7 @@
 ---
 name: fluent-vocab
-description: Run an interactive vocabulary drill session with flashcard-style prompts, spaced repetition, and per-answer feedback. Triggered only when the learner types /fluent-vocab. Reads spaced-repetition / mistakes / mastery DBs to pick words, presents one word at a time, scores each answer, and calls fluent-db-updater at the end.
+description: Run an interactive vocabulary drill session with flashcard-style prompts, spaced repetition, and per-answer feedback. Triggered when the learner types /fluent-vocab or picks it from the /fluent-learn menu. Reads spaced-repetition / mistakes / mastery DBs to pick words, presents one word at a time, scores each answer, and calls fluent-db-updater at the end.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Vocabulary Drill Session
@@ -13,7 +12,7 @@ Flashcard-style vocabulary practice using spaced repetition. One word at a time,
 
 ## When to Use
 
-Trigger this skill only when the learner types `/fluent-vocab`. The skill is gated with `disable-model-invocation: true` — a false-positive auto-trigger would launch a 15-min interactive session and mutate 6 JSON databases. Not worth the risk.
+Trigger this skill when the learner types `/fluent-vocab`, picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Skip this skill if no vocabulary items are due and no new words are queued — offer `/fluent-review` or `/fluent-learn` instead.
 
@@ -193,7 +192,7 @@ Learner: "schrijven"
 - **Mix modes.** Don't drill 20 recognition prompts in a row — interleave for discrimination.
 - **Use target language** for greetings + transitions when the learner is B1+; for A1-A2 mix target + native.
 - **Never** update the DBs mid-session — batch at end.
-- **Never auto-invoke.** This skill is gated; must fire only on explicit `/fluent-vocab`.
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.
 
 ## Tips for the Learner (append if they seem tired or unsure)
 

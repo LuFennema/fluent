@@ -871,6 +871,36 @@ def record(max_seconds: float = 20.0, silence_seconds: float = 1.5,
     return {"ok": True, "backend": backend, "file": str(out), "seconds": round(secs, 2)}
 
 
+_TICK_HZ = {"start": 1320.0, "stop": 880.0}
+
+
+def tick(kind: str = "start") -> None:
+    """Play a short tick so the learner hears when recording starts ("start", high)
+    and stops ("stop", lower). FLUENT_MIC_TICK=0 turns it off. Never raises."""
+    if os.environ.get("FLUENT_MIC_TICK", "1") in ("0", "false", "no"):
+        return
+    try:
+        import math
+        import struct
+        hz = _TICK_HZ.get(kind, _TICK_HZ["start"])
+        path = recordings_dir() / f"tick-{kind}.wav"
+        if not path.exists():
+            rate, n = 22050, int(22050 * 0.06)  # 60 ms
+            fade = int(rate * 0.005)
+            samples = []
+            for i in range(n):
+                env = min(1.0, i / fade, (n - i) / fade)
+                samples.append(int(0.5 * 32767 * env * math.sin(2 * math.pi * hz * i / rate)))
+            with wave.open(str(path), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(rate)
+                w.writeframes(struct.pack(f"<{n}h", *samples))
+        play_wav(path)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Speech-to-text
 # ---------------------------------------------------------------------------

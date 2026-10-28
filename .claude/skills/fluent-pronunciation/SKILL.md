@@ -1,8 +1,7 @@
 ---
 name: fluent-pronunciation
-description: Run a repeat-after-me pronunciation session — the tutor speaks a word or sentence with local text-to-speech, the learner says it into the microphone, and the skill scores it at the phone level (acoustic phoneme recognizer vs. espeak-ng target IPA) with Whisper as a word-level fallback, then explains which sounds were off. Triggered only when the learner types /fluent-pronunciation. Needs TTS, a microphone and a speech-to-text backend (run /fluent-voice-setup if missing). Updates all databases at the end.
+description: Run a repeat-after-me pronunciation session — the tutor speaks a word or sentence with local text-to-speech, the learner says it into the microphone, and the skill scores it at the phone level (acoustic phoneme recognizer vs. espeak-ng target IPA) with Whisper as a word-level fallback, then explains which sounds were off. Triggered when the learner types /fluent-pronunciation or picks it from the /fluent-learn menu. Needs TTS, a microphone and a speech-to-text backend (run /fluent-voice-setup if missing). Updates all databases at the end.
 allowed-tools: Read, Write, Bash
-disable-model-invocation: true
 ---
 
 # Pronunciation Practice (Microphone)
@@ -23,7 +22,7 @@ Three item types, interleaved:
 
 ## When to Use
 
-Trigger only on `/fluent-pronunciation`. Gated (`disable-model-invocation: true`).
+Trigger this skill when the learner types `/fluent-pronunciation`, picks it from the `/fluent-learn` menu, or explicitly asks to start this practice. Never start it from an ambiguous message — a 15-20 min interactive session that writes 6 databases must be what the learner asked for.
 
 Any level from A1 — pronunciation is the one skill that benefits from starting on day one.
 
@@ -218,7 +217,7 @@ Target `"El perro corre por el parque."` → `phonemes.score: 95`, `per_word: pe
 - **Coach articulation, not just the word.** Every miss gets one concrete instruction about lips, tongue, length, stress or pitch.
 - **Best of two counts.** One retry per item, no more — keep momentum.
 - **Audio stays local and is deleted.** Say so if asked.
-- **Never auto-invoke.**
+- **Start only on request.** Slash command, `/fluent-learn` menu pick, or an explicit ask — never from an ambiguous message.
 
 ## Language Reference
 

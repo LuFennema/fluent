@@ -2,6 +2,23 @@
 
 All notable changes to Fluent will be documented in this file.
 
+## [0.4.1] — 2026-10-28
+
+### Added
+
+- **Recording ticks.** `voice-listen.py` plays a short high tick when recording
+  starts and a lower one when it stops, so the learner knows when to speak.
+  New `tick()` helper in `fluent_voice.py`; `FLUENT_MIC_TICK=0` turns it off.
+
+### Changed
+
+- **Practice skills can be started from the `/fluent-learn` menu.** Removed
+  `disable-model-invocation: true` from `fluent-vocab`, `-writing`, `-speaking`,
+  `-reading`, `-review`, `-listening` and `-pronunciation`, so picking a menu
+  option hands off directly instead of asking the learner to type a second
+  command. Their instructions still say to start only on an explicit request.
+  `fluent-setup` (can reset progress) and `fluent-learn` stay gated.
+
 ## [0.4.0] — 2026-10-28
 
 _Personal fork of [m98/fluent](https://github.com/m98/fluent) by LuFennema. Everything below 0.3.0 is upstream's work._
