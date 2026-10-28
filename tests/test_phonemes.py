@@ -84,6 +84,13 @@ class TestG2P(unittest.TestCase):
         self.assertEqual(g["words"][1]["phones"], ["m", "aː", "n"])
 
     @unittest.skipUnless(HAVE_G2P, "needs espeak-ng or espeakng-loader")
+    def test_japanese_splits_on_cjk_punctuation(self):
+        g = fp.phonemize("ごはん、おいしい！", "ja")
+        self.assertTrue(g["ok"], g)
+        self.assertEqual([w["word"] for w in g["words"]], ["ごはん", "おいしい"])
+        self.assertGreater(len(g["words"][1]["phones"]), 1)              # phones, not one blob
+
+    @unittest.skipUnless(HAVE_G2P, "needs espeak-ng or espeakng-loader")
     def test_unknown_voice_is_clean_error(self):
         g = fp.phonemize("hello", "xx")
         self.assertFalse(g["ok"])
@@ -127,6 +134,20 @@ class TestScoring(unittest.TestCase):
         r = fp.score_phonemes(words, ["m", "a", "n"])   # right vowel, too short
         self.assertTrue(r["confusions"][0]["near"])
         self.assertEqual(r["score"], 83)                 # 1 - 0.5/3
+
+    def test_narrow_diacritics_and_moraic_n_match(self):
+        # espeak's Japanese o̞ / ä / ɴ against a recognizer's plain o / a / n
+        words = [{"word": "ごはん", "phones": ["ɡ", "o̞", "h", "ä", "ɴ"]}]
+        self.assertEqual(fp.score_phonemes(words, ["ɡ", "o", "h", "a", "n"])["score"], 100)
+
+    def test_length_and_nasal_tilde_still_count(self):
+        self.assertTrue(fp.score_phonemes([{"word": "x", "phones": ["iː"]}], ["i"])["confusions"])
+        self.assertTrue(fp.score_phonemes([{"word": "x", "phones": ["ɐ̃"]}], ["ɐ"])["confusions"])
+
+    def test_sh_variants_are_near_miss(self):
+        r = fp.score_phonemes([{"word": "し", "phones": ["ɕ", "i"]}], ["ʃ", "i"])
+        self.assertTrue(r["confusions"][0]["near"])
+        self.assertEqual(r["score"], 75)
 
     def test_deletion_and_insertion(self):
         words = [{"word": "koffie", "phones": ["k", "ɔ", "f", "i"]}]

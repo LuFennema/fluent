@@ -971,8 +971,37 @@ def transcribe(audio_file: str | Path, language: str | None = None, prompt: str 
 # Pronunciation / repeat-after-me scoring
 # ---------------------------------------------------------------------------
 
-def _norm_words(text: str) -> list[str]:
+_KANA = re.compile(r"[぀-ヿ]")
+_NO_SPACE = re.compile(r"[぀-ヿ㐀-鿿฀-๿]")  # Japanese, Chinese, Thai
+_ja_tagger_cache: list = []
+
+
+def _ja_tagger():
+    """fugashi + UniDic (installed with misaki[ja]) or None."""
+    if not _ja_tagger_cache:
+        try:
+            import fugashi  # type: ignore
+            _ja_tagger_cache.append(fugashi.Tagger())
+        except Exception:
+            _ja_tagger_cache.append(None)
+    return _ja_tagger_cache[0]
+
+
+def _hiragana(text: str) -> str:
+    return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in text)
+
+
+def _norm_words(text: str, japanese: bool = False) -> list[str]:
     text = unicodedata.normalize("NFKC", text).lower()
+    if japanese:
+        # Whisper writes ご飯 where the lesson wrote ごはん: compare readings, word by word
+        tagger = _ja_tagger()
+        if tagger is not None:
+            return [_hiragana(getattr(w.feature, "kana", None) or w.surface)
+                    for w in tagger(text) if re.search(r"\w", w.surface)]
+    if _NO_SPACE.search(text):
+        # no spaces between words: compare character by character
+        return [_hiragana(c) for c in text if re.match(r"\w", c)]
     text = re.sub(r"[^\w\s']", " ", text)
     return [w for w in text.split() if w]
 
@@ -980,7 +1009,8 @@ def _norm_words(text: str) -> list[str]:
 def score_against(expected: str, transcript: str) -> dict:
     """Word-level similarity between what the learner was supposed to say and what
     the recognizer heard. Returns similarity 0..100 plus the mismatched words."""
-    exp, got = _norm_words(expected), _norm_words(transcript)
+    japanese = bool(_KANA.search(expected + transcript))
+    exp, got = _norm_words(expected, japanese), _norm_words(transcript, japanese)
     sm = difflib.SequenceMatcher(a=exp, b=got, autojunk=False)
     similarity = round(sm.ratio() * 100)
     missed, extra = [], []

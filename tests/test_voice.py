@@ -86,6 +86,19 @@ class TestScoring(unittest.TestCase):
         self.assertEqual(s["similarity"], 0)
         self.assertEqual(s["missed"], ["man", "maan"])
 
+    def test_japanese_kanji_matches_kana(self):
+        if fv._ja_tagger() is None:
+            self.skipTest("needs fugashi + unidic (pip install 'misaki[ja]')")
+        s = fv.score_against("ごはん、おいしい！", "ご飯おいしい")
+        self.assertEqual(s["similarity"], 100)
+        self.assertEqual(s["expected_words"], 2)
+
+    def test_no_space_script_without_tagger_compares_characters(self):
+        with unittest.mock.patch.object(fv, "_ja_tagger", return_value=None):
+            s = fv.score_against("ねこです", "ネコです")
+        self.assertEqual(s["similarity"], 100)
+        self.assertEqual(s["expected_words"], 4)
+
     def test_unicode_normalisation(self):
         # decomposed vs precomposed accents should match
         s = fv.score_against("café", "café")

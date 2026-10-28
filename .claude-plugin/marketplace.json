@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Fluent (voice fork) — AI Language Learning Kit for Claude Code with local audio: listening, pronunciation scoring and spoken conversation. Personal marketplace of LuFennema; upstream is m98/fluent.",
-    "version": "0.4.1"
+    "version": "0.4.2"
   },
   "plugins": [
     {
@@ -33,7 +33,7 @@
         "name": "Mohammad Kermani (upstream) · voice features by LuFennema",
         "url": "https://github.com/m98/fluent"
       },
-      "version": "0.4.1",
+      "version": "0.4.2",
       "strict": true
     }
   ]

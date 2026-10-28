@@ -2,6 +2,21 @@
 
 All notable changes to Fluent will be documented in this file.
 
+## [0.4.2] — 2026-10-28
+
+### Fixed
+
+- **Phone-level scoring returned 0 on espeak-ng 1.50.** `--ipa=3` does not
+  separate phones there, so each word was compared as one blob. Now uses
+  `--ipa --sep=_`. Also fixes the Spanish/Dutch G2P tests on that version.
+- **Japanese pronunciation scoring.** Words split on CJK punctuation (、。！？);
+  espeak's narrow marks (o̞, ä) and moraic ɴ match the recognizer's o / a / n;
+  ɕ/ʃ and ʑ/ʒ count as near misses. Length (ː) and the nasal tilde still count.
+- **Word-level score for Japanese.** `score_against` compares readings via
+  fugashi + UniDic, so Whisper's ご飯 matches the lesson's ごはん; scripts
+  without spaces fall back to character comparison.
+- Older espeak-ng writes a trill as two taps (ɾ ɾ); merged into r.
+
 ## [0.4.1] — 2026-10-28
 
 ### Added

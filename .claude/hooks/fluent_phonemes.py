@@ -108,7 +108,8 @@ def _phonemize_raw(text: str, voice: str) -> str:
     b = g2p_backend()
     if b == "espeak-ng":
         exe = _which("espeak-ng", "espeak")
-        r = subprocess.run([exe, "-q", "--ipa=3", "-v", voice, text], capture_output=True,
+        # `--ipa=3` alone does not separate phones on espeak-ng 1.50; `--sep` does everywhere
+        r = subprocess.run([exe, "-q", "--ipa", "--sep=_", "-v", voice, text], capture_output=True,
                            text=True, timeout=30)
         if r.returncode != 0:
             raise RuntimeError((r.stderr or "espeak-ng failed").strip().splitlines()[-1])
@@ -132,16 +133,29 @@ def _clean_phone(p: str) -> str:
     return p
 
 
+def _merge_taps(phones: list[str]) -> list[str]:
+    """Older espeak-ng writes a trill as two taps (perro -> p e ɾ ɾ o); recognizers write r."""
+    out: list[str] = []
+    for p in phones:
+        if p == "ɾ" and out and out[-1] == "ɾ":
+            out[-1] = "r"
+        else:
+            out.append(p)
+    return out
+
+
 def phonemize(text: str, iso: str, bcp: str | None = None) -> dict:
     """Phonemize `text`. Returns {"ok", "backend", "voice", "words": [{"word", "phones"}], "ipa"}."""
     voice = espeak_voice(iso, bcp or iso)
-    words = [w for w in re.split(r"\s+", text.strip()) if re.search(r"\w", w)]
+    # CJK punctuation separates words too (Japanese/Chinese have no spaces)
+    words = [w for w in re.split(r"[\s、。，！？・「」『』]+", text.strip()) if re.search(r"\w", w)]
     try:
         raw = _phonemize_raw(" ".join(words), voice)
     except Exception as e:
         return {"ok": False, "error": str(e), "backend": g2p_backend(), "voice": voice}
     chunks = [c for c in raw.split(" ") if c.strip("_")]
-    phones_per_chunk = [[_clean_phone(p) for p in c.split("_") if _clean_phone(p)] for c in chunks]
+    phones_per_chunk = [_merge_taps([_clean_phone(p) for p in c.split("_") if _clean_phone(p)])
+                        for c in chunks]
     # espeak may merge/split tokens vs. our word list (e.g. "ship__" or numbers); align counts
     if len(phones_per_chunk) == len(words):
         pairs = list(zip(words, phones_per_chunk))
@@ -247,9 +261,31 @@ def _base(p: str) -> str:
                    if unicodedata.category(ch)[0] != "M" and ch not in "ːˑ")
 
 
+# Narrow-transcription marks espeak writes but phoneme recognizers don't (lowered o̞,
+# centralized ä, dental t̪, ...). The nasal tilde stays: it is phonemic (French, Portuguese).
+_KEEP_MARKS = {"̃"}
+# Same sound written differently by espeak and the recognizer.
+_EQUIV = {"ɴ": "n"}  # Japanese moraic n
+# Different symbols, close enough to count as a near miss (half an error).
+_NEAR = {frozenset(("ɕ", "ʃ")), frozenset(("ʑ", "ʒ"))}
+
+
+def _canon(p: str) -> str:
+    """Phone as compared: narrow-transcription diacritics dropped, length kept."""
+    p = "".join(ch for ch in unicodedata.normalize("NFD", p)
+                if unicodedata.category(ch) != "Mn" or ch in _KEEP_MARKS)
+    p = unicodedata.normalize("NFC", p)
+    return _EQUIV.get(p, p)
+
+
+def _near(a: str, b: str) -> bool:
+    return _base(a) == _base(b) or frozenset((_base(a), _base(b))) in _NEAR
+
+
 def align_phones(target: list[str], heard: list[str]) -> list[dict]:
     """Phone-level edit ops: equal / substitute / delete (missed) / insert (extra)."""
-    sm = difflib.SequenceMatcher(a=target, b=heard, autojunk=False)
+    sm = difflib.SequenceMatcher(a=[_canon(p) for p in target], b=[_canon(p) for p in heard],
+                                 autojunk=False)
     ops: list[dict] = []
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag == "equal":
@@ -260,7 +296,7 @@ def align_phones(target: list[str], heard: list[str]) -> list[dict]:
                 ti, hj = i1 + k, j1 + k
                 if ti < i2 and hj < j2:
                     ops.append({"op": "substitute", "t": ti, "target": target[ti], "heard": heard[hj],
-                                "near": _base(target[ti]) == _base(heard[hj])})
+                                "near": _near(target[ti], heard[hj])})
                 elif ti < i2:
                     ops.append({"op": "delete", "t": ti, "target": target[ti], "heard": None})
                 else:
