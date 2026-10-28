@@ -75,7 +75,7 @@ Speak **without printing the sentence**:
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-say.py" --quiet --lang "{target_language}" "{sentence}"
 ```
 
-For dialogues, call once per line so the pause between speakers is natural; alternate `--voice` if the platform has two voices for the language (see `say -v ?` on macOS), otherwise prefix lines with a spoken name.
+For dialogues, call once per line so the pause between speakers is natural; alternate `--voice` when the engine has two voices for the language (Kokoro: e.g. `ef_dora` / `em_alex`; macOS: see `say -v ?`), otherwise prefix lines with a spoken name.
 
 Then show only the prompt:
 

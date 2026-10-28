@@ -112,7 +112,7 @@ class TestBackendDetection(unittest.TestCase):
             rep = fv.doctor_report()
             self.assertFalse(rep["ok"])
             self.assertEqual([c["component"] for c in rep["checks"]],
-                             ["tts", "microphone", "speech-to-text"])
+                             ["tts", "kokoro", "piper", "microphone", "speech-to-text"])
             self.assertTrue(all(not c["ok"] for c in rep["checks"]))
             self.assertTrue(all(c["hint"] for c in rep["checks"]))
 
@@ -129,6 +129,193 @@ class TestBackendDetection(unittest.TestCase):
 
     def test_speak_empty(self):
         self.assertFalse(fv.speak("   ")["ok"])
+
+
+FAKE_KOKORO = """
+import numpy as np
+class KPipeline:
+    def __init__(self, lang_code, repo_id=None):
+        self.lang = lang_code
+    def __call__(self, text, voice, speed=1.0):
+        yield ("g", "p", np.zeros(2400, dtype="float32"))
+"""
+
+
+def _have(*mods):
+    try:
+        for m in mods:
+            __import__(m)
+        return True
+    except Exception:
+        return False
+
+
+class TestNeuralEngines(unittest.TestCase):
+    """Kokoro / Piper selection and fallback, without the real models."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="fluent-neural-"))
+        self.played: list = []
+        self._orig_play = fv.play_wav
+        fv.play_wav = lambda p: self.played.append(Path(p).stat().st_size)
+        self._orig_player = fv.player_backend
+        fv.player_backend = lambda: "fake"
+        os.environ["FLUENT_DATA_DIR"] = str(self.tmp)
+        fv.data_dir.cache_clear() if hasattr(fv.data_dir, "cache_clear") else None
+
+    def tearDown(self):
+        fv.play_wav = self._orig_play
+        fv.player_backend = self._orig_player
+        for k in ("FLUENT_DATA_DIR", "FLUENT_TTS_ENGINE", "FLUENT_PIPER_AUTO_DOWNLOAD",
+                  "FLUENT_PIPER_VOICE", "FLUENT_KOKORO_VOICE"):
+            os.environ.pop(k, None)
+
+    def test_kokoro_language_table(self):
+        self.assertEqual(fv.kokoro_voice_for("Spanish"), ("e", "ef_dora"))
+        self.assertEqual(fv.kokoro_voice_for("en-GB"), ("b", "bf_emma"))
+        self.assertEqual(fv.kokoro_voice_for("Brazilian Portuguese"), ("p", "pf_dora"))
+        self.assertIsNone(fv.kokoro_voice_for("Dutch"))
+        self.assertIsNone(fv.kokoro_voice_for("German"))
+        with unittest.mock.patch.dict(os.environ, {"FLUENT_KOKORO_VOICE": "em_alex"}):
+            self.assertEqual(fv.kokoro_voice_for("es"), ("e", "em_alex"))
+
+    def test_piper_language_table_and_urls(self):
+        self.assertEqual(fv.piper_voice_for("Dutch"), "nl_NL-mls-medium")
+        self.assertEqual(fv.piper_voice_for("nl-BE"), "nl_BE-nathalie-medium")
+        self.assertEqual(fv.piper_voice_for("German"), "de_DE-thorsten-medium")
+        self.assertIsNone(fv.piper_voice_for("Japanese"))
+        onnx, cfg = fv.piper_voice_url("nl_NL-mls-medium")
+        self.assertTrue(onnx.endswith("/nl/nl_NL/mls/medium/nl_NL-mls-medium.onnx"))
+        self.assertEqual(cfg, onnx + ".json")
+        for vid in set(fv.PIPER_DEFAULT_VOICES.values()):
+            fv.piper_voice_url(vid)  # every catalog id must parse
+
+    def test_engine_order_prefers_kokoro_then_piper_then_system(self):
+        with unittest.mock.patch.object(fv, "kokoro_available", return_value=True), \
+             unittest.mock.patch.object(fv, "piper_available", return_value=True), \
+             unittest.mock.patch.object(fv, "system_tts_backend", return_value="espeak-ng"):
+            self.assertEqual(fv.tts_backend("Spanish"), "kokoro")   # kokoro has es
+            self.assertEqual(fv.tts_backend("Dutch"), "piper")      # kokoro lacks nl, piper has it
+            self.assertEqual(fv.tts_backend("Japanese"), "kokoro")  # kokoro has ja, piper doesn't
+            self.assertEqual(fv.tts_backend("Korean"), "espeak-ng") # neither
+            self.assertEqual(fv.tts_backend(), "kokoro")
+            with unittest.mock.patch.dict(os.environ, {"FLUENT_TTS_ENGINE": "system"}):
+                self.assertEqual(fv.tts_backend("Spanish"), "espeak-ng")
+            with unittest.mock.patch.dict(os.environ, {"FLUENT_TTS_ENGINE": "piper"}):
+                self.assertEqual(fv.tts_backend("Spanish"), "piper")
+            with unittest.mock.patch.dict(os.environ, {"FLUENT_TTS_CMD": "x"}):
+                self.assertEqual(fv.tts_backend("Spanish"), "custom")
+
+    def test_no_player_disables_neural_engines(self):
+        fv.player_backend = lambda: None
+        with unittest.mock.patch.object(fv, "kokoro_available", return_value=True), \
+             unittest.mock.patch.object(fv, "piper_available", return_value=True), \
+             unittest.mock.patch.object(fv, "system_tts_backend", return_value="say"):
+            self.assertEqual(fv.tts_backend("Spanish"), "say")
+
+    @unittest.skipUnless(_have("numpy", "soundfile"), "needs numpy + soundfile")
+    def test_kokoro_synthesis_through_worker(self):
+        mods = self.tmp / "mods"
+        (mods / "kokoro").mkdir(parents=True)
+        (mods / "kokoro" / "__init__.py").write_text(FAKE_KOKORO)
+        with unittest.mock.patch.dict(os.environ, {"PYTHONPATH": str(mods)}), \
+             unittest.mock.patch.object(fv, "kokoro_available", return_value=True):
+            res = fv.speak("Hola, ¿qué tal?", "Spanish")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["backend"], "kokoro")
+        self.assertEqual(res["voice"], "ef_dora")
+        self.assertEqual(len(self.played), 1)
+        self.assertGreater(self.played[0], 44)  # a real WAV was written and played
+        self.assertEqual(list((self.tmp / ".voice").glob("tts-*.wav")), [], "temp wav must be removed")
+
+    def test_kokoro_worker_failure_is_reported(self):
+        with unittest.mock.patch.dict(os.environ, {"PYTHONPATH": str(self.tmp)}), \
+             unittest.mock.patch.object(fv, "kokoro_available", return_value=True):
+            res = fv.speak("Hola", "Spanish")   # no kokoro module on that path -> ImportError
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["backend"], "kokoro")
+        self.assertIn("kokoro", res["error"])
+
+    def test_piper_model_resolution_and_download(self):
+        downloads: list = []
+
+        def fake_download(url, dest):
+            downloads.append(url)
+            dest.write_bytes(b"model")
+
+        with unittest.mock.patch.object(fv, "_download", fake_download):
+            res = fv.piper_model_path(None, "Dutch")
+            self.assertTrue(res["ok"], res)
+            self.assertTrue(res["downloaded"])
+            self.assertEqual(res["voice"], "nl_NL-mls-medium")
+            self.assertEqual(len(downloads), 2)
+            self.assertTrue(Path(res["model"]).exists())
+            # second call: cached, no download
+            res2 = fv.piper_model_path(None, "Dutch")
+            self.assertFalse(res2["downloaded"])
+            self.assertEqual(len(downloads), 2)
+
+    def test_piper_download_disabled_and_failure(self):
+        with unittest.mock.patch.dict(os.environ, {"FLUENT_PIPER_AUTO_DOWNLOAD": "0"}):
+            res = fv.piper_model_path(None, "German")
+            self.assertFalse(res["ok"])
+            self.assertIn("not downloaded", res["error"])
+        self.assertFalse(fv.piper_model_path(None, "Japanese")["ok"])
+
+        def boom(url, dest):
+            raise OSError("network down")
+        with unittest.mock.patch.object(fv, "_download", boom):
+            res = fv.piper_model_path(None, "German")
+            self.assertFalse(res["ok"])
+            self.assertIn("could not download", res["error"])
+            self.assertEqual(list((self.tmp / ".voice" / "models").glob("*")), [], "no partial files left")
+
+    def test_piper_speak_falls_back_to_system_when_download_refused(self):
+        spoken = []
+        with unittest.mock.patch.dict(os.environ, {"FLUENT_PIPER_AUTO_DOWNLOAD": "0",
+                                                   "FLUENT_TTS_CMD": ""}), \
+             unittest.mock.patch.object(fv, "kokoro_available", return_value=False), \
+             unittest.mock.patch.object(fv, "piper_available", return_value=True), \
+             unittest.mock.patch.object(fv, "system_tts_backend", return_value="espeak-ng"), \
+             unittest.mock.patch.object(fv.subprocess, "run", lambda cmd, **k: spoken.append(cmd)):
+            os.environ.pop("FLUENT_TTS_CMD")
+            res = fv.speak("Guten Tag", "German")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["backend"], "espeak-ng")
+        self.assertIn("piper_fallback", res)
+        self.assertEqual(spoken[0][0], "espeak-ng")
+
+    def test_piper_speak_synthesizes_and_plays(self):
+        model = self.tmp / "v.onnx"
+        model.write_bytes(b"m"); model.with_suffix(".onnx.json").write_text("{}")
+        calls = []
+
+        def fake_run(cmd, **k):
+            calls.append(cmd)
+            Path(cmd[cmd.index("--output_file") + 1]).write_bytes(b"RIFF" + b"\0" * 100)
+        with unittest.mock.patch.object(fv, "kokoro_available", return_value=False), \
+             unittest.mock.patch.object(fv, "piper_available", return_value=True), \
+             unittest.mock.patch.object(fv, "_piper_cmd", return_value=["piper"]), \
+             unittest.mock.patch.object(fv.subprocess, "run", fake_run):
+            res = fv.speak("Hallo wereld", "Dutch", rate=0.8, voice=str(model))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["backend"], "piper")
+        self.assertEqual(res["voice"], "v")
+        self.assertIn("--length_scale", calls[0])
+        self.assertEqual(calls[0][calls[0].index("--length_scale") + 1], "1.250")
+        self.assertEqual(self.played, [104])
+
+    def test_doctor_marks_neural_engines_optional(self):
+        with unittest.mock.patch.object(fv, "kokoro_available", return_value=False), \
+             unittest.mock.patch.object(fv, "piper_available", return_value=False), \
+             unittest.mock.patch.object(fv, "tts_backend", return_value="say"), \
+             unittest.mock.patch.object(fv, "mic_backend", return_value="ffmpeg"), \
+             unittest.mock.patch.object(fv, "stt_backend", return_value="faster-whisper"):
+            rep = fv.doctor_report()
+        self.assertTrue(rep["ok"], "missing kokoro/piper must not fail the report")
+        comps = {c["component"]: c for c in rep["checks"]}
+        self.assertFalse(comps["kokoro"]["ok"]); self.assertFalse(comps["piper"]["ok"])
+        self.assertIn("kokoro", comps["tts"]["hint"])
 
 
 class TestCLIs(unittest.TestCase):
@@ -208,7 +395,8 @@ class TestCLIs(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         rep = json.loads(r.stdout)
         self.assertFalse(rep["ok"])
-        self.assertEqual(len(rep["checks"]), 3)
+        self.assertEqual([c["component"] for c in rep["checks"]],
+                         ["tts", "kokoro", "piper", "microphone", "speech-to-text"])
 
         env = dict(self.env, FLUENT_TTS_CMD="true", FLUENT_STT_CMD="true",
                    FLUENT_MIC_FAKE="1")

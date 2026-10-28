@@ -318,17 +318,22 @@ Fluent can **speak** and **listen** — entirely on your machine.
 
 | Component | What it does | Backends (first found wins) |
 |-----------|--------------|-----------------------------|
-| 🔊 Text-to-speech | Reads sentences, dialogues and model pronunciations aloud | macOS `say` · Linux `espeak-ng`/`espeak`/`spd-say` · Windows SAPI (PowerShell) · `pyttsx3` · your own via `FLUENT_TTS_CMD` |
+| 🔊 Text-to-speech | Reads sentences, dialogues and model pronunciations aloud | **Kokoro** (neural, best quality) → **Piper** (neural, 40+ languages) → OS engine: macOS `say` · Linux `espeak-ng` · Windows SAPI · `pyttsx3` · your own via `FLUENT_TTS_CMD` |
 | 🎙️ Microphone | Records your answer, stops when you go quiet | `sounddevice`+`numpy` (pip) · `ffmpeg` · `sox` · `arecord` |
 | 📝 Speech-to-text | Transcribes what you said in the target language | `faster-whisper` (pip) · `openai-whisper` · whisper.cpp · your own via `FLUENT_STT_CMD` |
 
-**Setup in one line** (macOS / Linux / Windows):
+**Setup** (macOS / Linux / Windows):
 
 ```bash
-pip install faster-whisper sounddevice numpy      # Linux also: sudo apt install espeak-ng ffmpeg
+pip install faster-whisper sounddevice numpy      # microphone + speech recognition
+pip install kokoro soundfile                      # natural voices (en/es/fr/it/pt-BR/hi/ja/zh)
+pip install piper-tts                             # natural voices for 40+ other languages (nl, de, ru, pl, sv, tr, ar, …)
+# Linux also: sudo apt install espeak-ng ffmpeg
 ```
 
 Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a test sentence.
+
+**Which voice you'll hear.** Per sentence, Fluent uses Kokoro if it has a voice for your target language, otherwise Piper, otherwise the operating system's voice. Kokoro is the most natural but covers nine languages and pulls in PyTorch; Piper is light (ONNX, 20-80 MB per voice) and covers most of Europe plus Arabic, Persian, Turkish, Mandarin and Vietnamese. Models download from Hugging Face on first use (`voice-doctor.py --download-voice` pre-fetches them). Without either, you still get the OS engine — fine for dictation, flat for shadowing.
 
 **What each voice skill needs**
 
@@ -345,12 +350,16 @@ Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a
 | Variable | Purpose |
 |----------|---------|
 | `FLUENT_WHISPER_MODEL` | `tiny` / `base` / `small` (default) / `medium` / `large-v3` — bigger is more accurate, slower, more RAM |
-| `FLUENT_TTS_VOICE` | Force a specific installed voice (e.g. `Xander` on macOS for Dutch) |
+| `FLUENT_TTS_ENGINE` | `auto` (default) / `kokoro` / `piper` / `system` — force an engine |
+| `FLUENT_KOKORO_VOICE` | Kokoro voice id (e.g. `em_alex`, `bf_emma`, `jf_alpha`) |
+| `FLUENT_PIPER_VOICE` | Piper voice id (e.g. `nl_BE-nathalie-medium`) or path to a local `.onnx` |
+| `FLUENT_PIPER_AUTO_DOWNLOAD` | `0` to never download; place models in `<data_dir>/.voice/models/` yourself |
+| `FLUENT_TTS_VOICE` | OS-engine voice name (e.g. `Xander` on macOS for Dutch) |
 | `FLUENT_MIC_DEVICE` | Pick a microphone when you have several |
 | `FLUENT_TTS_CMD` / `FLUENT_STT_CMD` | Plug in any engine: `{text}`/`{lang}` and `{file}`/`{lang}` placeholders |
 | `FLUENT_WHISPER_CPP_MODEL` | Path to a ggml model to use whisper.cpp from PATH |
 
-**Privacy.** Recordings go to `<data_dir>/.voice/` and are deleted right after transcription unless you pass `--keep`. Nothing is uploaded anywhere.
+**Privacy.** Recordings go to `<data_dir>/.voice/` and are deleted right after transcription unless you pass `--keep`. Nothing is uploaded anywhere; the only network access is the one-time model download from Hugging Face (opt out with `FLUENT_PIPER_AUTO_DOWNLOAD=0`).
 
 **Scripts** (all in `.claude/hooks/`, usable on their own):
 
@@ -411,7 +420,7 @@ The system automatically adjusts:
 - **AI Model:** Claude (any Claude Code-supported model)
 - **Data Format:** JSON (human-readable)
 - **Skills:** Markdown `SKILL.md` files with YAML frontmatter (15 total — 11 learner-facing + 4 helper)
-- **Voice:** `.claude/hooks/fluent_voice.py` — local TTS (`say` / `espeak-ng` / SAPI / `pyttsx3`), mic capture (`sounddevice` / `ffmpeg` / `sox` / `arecord`), STT (`faster-whisper` / `openai-whisper` / whisper.cpp), word-level pronunciation scoring. Any backend can be swapped via `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`.
+- **Voice:** `.claude/hooks/fluent_voice.py` — local TTS (Kokoro / Piper / `say` / `espeak-ng` / SAPI / `pyttsx3`), mic capture (`sounddevice` / `ffmpeg` / `sox` / `arecord`), STT (`faster-whisper` / `openai-whisper` / whisper.cpp), word-level pronunciation scoring. Any backend can be swapped via `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`.
 - **Hooks:** Python + Bash, triggered on SessionStart / SessionEnd / PostToolUse / PreCompact
 - **Algorithm:** SM-2 (SuperMemo 2)
 - **Version Control:** Git
@@ -461,7 +470,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 We're especially interested in:
 
 1. 🌐 **Language-specific optimizations** - Grammar rules, common errors for specific languages
-2. 🎵 **Audio features** - More TTS/STT backends (Piper, Kokoro, Vosk), per-phoneme scoring, listening with real recordings
+2. 🎵 **Audio features** - More STT backends (Vosk, Parakeet), per-phoneme scoring, Kokoro/Piper voices for more languages, listening with real recordings
 3. 📊 **Visual enhancements** - Better progress charts, statistics
 4. 📱 **Mobile support** - Companion app or mobile interface
 5. ⚡ **Performance** - Optimize data loading, improve speed

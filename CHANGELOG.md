@@ -10,9 +10,11 @@ All notable changes to Fluent will be documented in this file.
   New module `.claude/hooks/fluent_voice.py` with three CLIs: `voice-say.py`
   (speak text), `voice-listen.py` (record, transcribe, optionally score
   against an expected sentence) and `voice-doctor.py` (detect backends,
-  print install hints per OS, `--test` plays a sentence). Backends are
-  auto-detected — TTS: macOS `say`, `espeak-ng`/`espeak`/`spd-say`, Windows
-  SAPI, `pyttsx3`; mic: `sounddevice`, `ffmpeg`, `sox`, `arecord`; STT:
+  print install hints per OS, `--test` plays a sentence, `--download-voice`
+  pre-fetches the neural model). Backends are auto-detected — TTS: **Kokoro**
+  (neural, best quality: en/es/fr/it/pt-BR/hi/ja/zh), **Piper** (neural, 40+
+  languages, ~20-80 MB voice downloaded on first use), then macOS `say`,
+  `espeak-ng`/`espeak`/`spd-say`, Windows SAPI, `pyttsx3`; mic: `sounddevice`, `ffmpeg`, `sox`, `arecord`; STT:
   `faster-whisper`, `openai-whisper`, whisper.cpp — and any engine can be
   plugged in with `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`. Nothing leaves the
   machine; recordings are deleted after transcription.
@@ -30,8 +32,9 @@ All notable changes to Fluent will be documented in this file.
   note. `preferences.voice: true` in the profile makes it the default.
 - `/fluent-learn` menu gains Listening and Pronunciation options when the
   audio stack is available; the adaptive mix may include listening items.
-- `tests/test_voice.py` — 22 tests covering language mapping, scoring,
-  backend detection and all three CLIs with simulated engines.
+- `tests/test_voice.py` — 33 tests covering language mapping, scoring,
+  engine selection/fallback (Kokoro → Piper → OS), Piper model download and
+  all three CLIs with simulated engines.
 
 ### Changed
 
