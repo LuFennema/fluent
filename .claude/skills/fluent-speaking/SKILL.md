@@ -57,10 +57,10 @@ python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-say
 Then record the learner's reply instead of waiting for typed input:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-listen.py" --lang "{target_language}" --max-seconds 30
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-listen.py" --lang "{target_language}" --max-seconds 30 --prompt "{names, places and key vocabulary of the current topic, comma-separated}"
 ```
 
-Use `transcript` as "their answer". Show it back verbatim in the feedback (`**What I heard:**`) so a mis-transcription is visible and the learner can say `again`. Controls in voice mode: `again` (re-record), `type` (answer this one by keyboard), `replay`, `typed` (switch mode for the rest of the session). The learner can always type instead of speaking — if typed text arrives, use it.
+`--prompt` biases Whisper toward the words it is likely to hear (the learner's name, the city in the role-play, the vocabulary you just introduced) and cuts transcription errors a lot in conversation. It is right here and wrong in `/fluent-pronunciation`. Use `transcript` as "their answer". Run `voice-server.py start` once at the opening so each turn doesn't reload the models. Show it back verbatim in the feedback (`**What I heard:**`) so a mis-transcription is visible and the learner can say `again`. Controls in voice mode: `again` (re-record), `type` (answer this one by keyboard), `replay`, `typed` (switch mode for the rest of the session). The learner can always type instead of speaking — if typed text arrives, use it.
 
 Voice-mode error handling: a recording error → run the doctor, hand off to `/fluent-voice-setup`; empty transcript or `recording.seconds < 0.4` → "Didn't catch that — say `again`"; `confidence < 0.4` → ask them to repeat once before evaluating.
 

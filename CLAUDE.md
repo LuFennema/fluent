@@ -105,7 +105,9 @@ See `docs/DB_SCRIPTS.md` for the full input schema and examples.
 
 - `voice-say.py --quiet --lang "{target_language}" "text"` — speak a line (never print the text first in listening/pronunciation items).
 - `voice-listen.py --lang "{target_language}" [--expect "text"]` — record from the mic, transcribe locally, optionally score against the expected sentence (`score.similarity`, `missed`, `heard_instead`).
-- `voice-doctor.py --json` — which backends exist; exit 2 means something is missing → hand off to `/fluent-voice-setup`.
+- `voice-doctor.py --json` — which backends exist; exit 2 means something is missing → hand off to `/fluent-voice-setup`. `phoneme_scoring: true` means `voice-listen.py --expect` also returns `phonemes` (acoustic, phone-level — trust it over the Whisper `score`).
+- `voice-server.py start` — pre-warm the model server at the start of any voice session (no-op if running).
+- `voice-say.py --variety [--noise 0.1]` — listening drills with a random voice, varied speed and background noise.
 
 All audio stays on the learner's machine. Recordings are deleted after transcription.
 

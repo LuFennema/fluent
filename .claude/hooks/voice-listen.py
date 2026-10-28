@@ -18,6 +18,12 @@ Options:
     --file          transcribe an existing WAV instead of recording
     --keep          keep the WAV file (default: deleted after transcription)
     --countdown     seconds to wait (printing a countdown to stderr) before recording
+    --prompt        words/names to bias the transcription toward (session vocabulary);
+                    use in conversation, NOT with --expect (it would mask pronunciation errors)
+    --phonemes      with --expect: also score at the phone level (needs espeak-ng or
+                    `pip install espeakng-loader` for the target, and a phoneme
+                    recognizer — see voice-doctor.py). Default: on when available.
+    --no-phonemes   skip phone-level scoring
 
 Prints a JSON result:
     {
@@ -26,8 +32,15 @@ Prints a JSON result:
       "transcript": "ik wil graag een koffie",
       "confidence": 0.91,
       "stt_backend": "faster-whisper",
-      "score": {"similarity": 100, "missed": [], "heard_instead": []}
+      "score": {"similarity": 100, "missed": [], "heard_instead": []},
+      "phonemes": {"available": true, "score": 92, "target_ipa": "...", "heard_ipa": "...",
+                   "per_word": [...], "top_confusions": [{"expected": "r", "heard": "ɾ", "count": 1}],
+                   "weak_words": ["perro"]}
     }
+
+`score` comes from the Whisper transcript (word level, lenient — Whisper tends to
+auto-correct mispronunciations). `phonemes` comes from an acoustic phoneme recognizer
+with no language model and is the one to trust for pronunciation when available.
 
 Exit 0 on success, 1 if recording or transcription failed (the JSON carries
 the error and a hint to run voice-doctor.py).
@@ -43,6 +56,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fluent_paths import data_dir, force_utf8_io  # noqa: E402
 from fluent_voice import emit, record, score_against, transcribe  # noqa: E402
+import fluent_phonemes  # noqa: E402
 
 
 def profile_language() -> str | None:
@@ -63,6 +77,9 @@ def main() -> int:
     ap.add_argument("--file")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--countdown", type=int, default=0)
+    ap.add_argument("--prompt")
+    ap.add_argument("--phonemes", dest="phonemes", action="store_true", default=None)
+    ap.add_argument("--no-phonemes", dest="phonemes", action="store_false")
     a = ap.parse_args()
 
     lang = a.lang or profile_language()
@@ -91,7 +108,19 @@ def main() -> int:
         result["recording"] = {k: rec[k] for k in ("backend", "seconds") if k in rec}
         keep = a.keep
 
-    stt = transcribe(audio, lang)
+    stt = transcribe(audio, lang, prompt=None if a.expect else a.prompt)
+
+    phon = None
+    if a.expect and a.phonemes is not False:
+        from fluent_voice import lang_codes
+        iso, bcp = lang_codes(lang)
+        try:
+            phon = fluent_phonemes.analyze(audio, a.expect, iso, bcp)
+        except Exception as e:  # never let phoneme scoring break the main result
+            phon = {"available": False, "reason": str(e)}
+        if a.phonemes is None and not phon.get("available") and not phon.get("target_ipa"):
+            phon = None  # nothing installed and not explicitly asked: stay quiet
+
     if not keep:
         try:
             audio.unlink()
@@ -117,6 +146,8 @@ def main() -> int:
     if a.expect:
         result["expected"] = a.expect
         result["score"] = score_against(a.expect, result["transcript"])
+        if phon is not None:
+            result["phonemes"] = phon
     emit(result)
     return 0
 

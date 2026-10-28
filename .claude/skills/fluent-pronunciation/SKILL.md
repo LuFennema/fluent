@@ -1,6 +1,6 @@
 ---
 name: fluent-pronunciation
-description: Run a repeat-after-me pronunciation session — the tutor speaks a word or sentence with local text-to-speech, the learner says it into the microphone, local speech-to-text (Whisper) transcribes it, and the skill scores how close it was and explains which sounds were off. Triggered only when the learner types /fluent-pronunciation. Needs TTS, a microphone and a speech-to-text backend (run /fluent-voice-setup if missing). Updates all databases at the end.
+description: Run a repeat-after-me pronunciation session — the tutor speaks a word or sentence with local text-to-speech, the learner says it into the microphone, and the skill scores it at the phone level (acoustic phoneme recognizer vs. espeak-ng target IPA) with Whisper as a word-level fallback, then explains which sounds were off. Triggered only when the learner types /fluent-pronunciation. Needs TTS, a microphone and a speech-to-text backend (run /fluent-voice-setup if missing). Updates all databases at the end.
 allowed-tools: Read, Write, Bash
 disable-model-invocation: true
 ---
@@ -9,9 +9,12 @@ disable-model-invocation: true
 
 ## Overview
 
-Real spoken output, scored locally. Loop per item: Claude **speaks the model** → learner **repeats into the mic** → Whisper **transcribes** → `voice-listen.py --expect` returns a **word-level similarity** → Claude turns the mismatches into phonetic feedback.
+Real spoken output, scored locally. Loop per item: Claude **speaks the model** → learner **repeats into the mic** → `voice-listen.py --expect` returns **two scores**:
 
-A transcription miss is a proxy for a pronunciation problem: if the recognizer heard *"vier"* when the target was *"vuur"*, the learner's `uu` is drifting toward `ie`. That is the signal we coach on.
+- `phonemes` — **the one to trust.** An acoustic phoneme recognizer (wav2vec2, no language model) writes down the sounds the learner actually produced; espeak-ng gives the sounds the sentence should have; the two are aligned phone by phone and attributed to words. `phonemes.score` 0-100, `per_word[].accuracy`, `weak_words`, `top_confusions` (e.g. `expected "r", heard "ɾ"`), `target_ipa` / `heard_ipa`.
+- `score` — the Whisper transcript compared word by word. Lenient: Whisper is a language model and quietly corrects *pero*→*perro* when *perro* fits the sentence. Use it only when `phonemes.available` is false.
+
+When `phonemes` is present but `available: false`, it still carries `target_ipa` — show it to the learner anyway; seeing /ˈpero/ vs /ˈpeɾo/ is useful even without scoring.
 
 Three item types, interleaved:
 1. **Minimal pairs** — two words differing in one sound (`man / maan`, `pero / perro`). The sharpest diagnostic.
@@ -33,7 +36,15 @@ python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/read-db.p
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-doctor.py" --json
 ```
 
-All three checks (`tts`, `microphone`, `speech-to-text`) must be `ok`. If not: one line saying which is missing, hand off to `/fluent-voice-setup`, stop.
+All three required checks (`tts`, `microphone`, `speech-to-text`) must be `ok`. If not: one line saying which is missing, hand off to `/fluent-voice-setup`, stop.
+
+Note `phoneme_scoring` in the same JSON. If false, tell the learner once at the opening that scoring is word-level today and that `/fluent-voice-setup` explains how to turn on phone-level scoring; then carry on.
+
+Pre-warm the models so the first item doesn't stall (safe no-op if already running):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-server.py" start
+```
 
 Need from the DBs: name, level, target_language, `mastery-db.skills_mastery.pronunciation` (treat missing as 1), `mistakes-db` entries with category `pronunciation` or `listening`, due vocabulary.
 
@@ -92,7 +103,7 @@ Listen… now repeat.
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-listen.py" --lang "{target_language}" --max-seconds 15 --expect "{target_text}"
 ```
 
-The JSON gives `transcript`, `confidence` (0-1 when the backend reports it), and `score: {similarity, missed, heard_instead}`.
+The JSON gives `transcript`, `confidence`, `score: {similarity, missed, heard_instead}` and, when available, `phonemes: {score, per_word, weak_words, top_confusions, target_ipa, heard_ipa}`. Never pass `--prompt` here — biasing the recognizer toward the target would hide exactly the errors we're measuring.
 
 Error handling:
 - `ok: false` with a recording error → say "I couldn't open the microphone", run the doctor, hand off to `/fluent-voice-setup`.
@@ -101,27 +112,34 @@ Error handling:
 
 ### 5. Score and coach
 
-Thresholds on `score.similarity`:
+Use `phonemes.score` when `phonemes.available` is true, else `score.similarity`. Thresholds:
 - **≥ 90** → ✅ correct
-- **70-89** → 🟡 close — item correct if the only misses are function words; otherwise one retry allowed, best of two counts
+- **70-89** → 🟡 close — item correct if the only issues are near misses (`near: true`, e.g. vowel length) or function words; otherwise one retry allowed, best of two counts
 - **< 70** → ❌ — explain, retry once, best of two counts
 
-Feedback template:
+Feedback template (phone-level):
 
 ```markdown
 {✅ Clear! | 🟡 Close | ❌ Let's fix one sound}
 
-**Target:** "{target_text}"
-**I heard:** "{transcript}"
-**Match:** {similarity}%
+**Target:** "{target_text}"  /{target_ipa}/
+**You said:** /{heard_ipa}/   (Whisper heard: "{transcript}")
+**Match:** {phonemes.score}%   {per word: perro 75% · corre 100% …}
 
-{For each pair (missed → heard_instead), one line of phonetic coaching:}
-- **{missed}** came out as *{heard_instead}* → {what to do with the mouth/tongue, one concrete instruction, e.g. "round your lips tighter and keep them still for `uu` — `ie` is what you get when they relax"}
-
-{If relevant: the recognizer's own uncertainty — "the transcription was unsure here, so take this one lightly"}
+{For each entry in top_confusions (max 2), one line of articulatory coaching:}
+- **/{expected}/ → /{heard}/** in *{word}* → {what to do with lips/tongue/length/stress — one concrete instruction}
 
 🔊 Listen once more and try again? (`again`)
 ```
+
+Word-level fallback (no phoneme recognizer): same template with `score.similarity`, `missed` → `heard_instead` pairs, and `target_ipa` if present.
+
+Interpretation rules:
+- `substitute` with `near: true` = right sound, wrong length/quality → coach **length** ("hold it twice as long").
+- `delete` at word end = dropped final consonant → coach **release** ("finish the `t`").
+- `insert` of `ə` between consonants = epenthesis (common for Spanish/Japanese speakers) → coach **clusters** ("no vowel between `s` and `t`").
+- The same `expected→heard` pair in two items = the session's focus sound; add a minimal pair for it next.
+- If `heard_phones` is far shorter than `target_phones` (< 60%), the mic probably cut off → `again`, don't score.
 
 Keep coaching **articulatory and concrete** (lips, tongue position, length, stress, pitch). Never say just "wrong".
 
@@ -155,7 +173,7 @@ Use `fluent-db-updater`:
 
 - `command_used: "/fluent-pronunciation"`, `skills_practiced: ["pronunciation"]`
 - `skill_scores.pronunciation: {exercises: N, correct: count_clear_or_close, time_minutes}`
-- `errors[]` — `category: "pronunciation"`, `pattern_id` names the sound (e.g. `pronunciation_uu_vs_ie`, `pronunciation_rr_trill`, `pronunciation_final_devoicing`, `pronunciation_word_stress`), `your_answer` = transcript, `correct_answer` = target, `context` = the word
+- `errors[]` — `category: "pronunciation"`, `pattern_id` from the confusion pair (e.g. `pronunciation_r_to_ɾ`, `pronunciation_aː_to_ɑ`, `pronunciation_final_t_dropped`), `your_answer` = `heard_ipa`, `correct_answer` = `target_ipa`, `context` = the word
 - `vocabulary_reviewed[]` — due words that appeared: quality 5 if ≥ 90 first try, 4 on retry, 2 if < 70 twice
 - `focus_next_session[]` — top sound
 
@@ -165,37 +183,38 @@ Save per-item target / transcript / similarity to `/results/fluent-pronunciation
 
 ### Minimal pair (Dutch, native Spanish speaker)
 
-Claude speaks `"man, maan"` with `--quiet`, then records. Result: `transcript: "man man"`, `similarity: 50`, `missed: ["maan"]`, `heard_instead: ["man"]`.
+Claude speaks `"man, maan"` with `--quiet`, then records. Result: `phonemes.score: 83`, `top_confusions: [{expected: "aː", heard: "ɑ"}]`, `weak_words: ["maan"]`, `target_ipa: "mɑn maːn"`, `heard_ipa: "mɑnmɑn"`. (Whisper's transcript was "man maan" — it guessed the second word from context, which is exactly why we don't score on it.)
 
-> ❌ Let's fix one sound
+> 🟡 Close
 >
-> **Target:** "man, maan"
-> **I heard:** "man man"
-> **Match:** 50%
+> **Target:** "man, maan"  /mɑn maːn/
+> **You said:** /mɑn mɑn/   (Whisper heard: "man maan")
+> **Match:** 83%   man 100% · maan 67%
 >
-> - **maan** came out as *man* → the long `aa` is nearly twice as long as `a`, and the mouth opens wider. Hold it: *maaaan*. Spanish has no length contrast, so this one takes deliberate exaggeration at first.
+> - **/aː/ → /ɑ/** in *maan* → you made the short vowel twice. The long `aa` is nearly twice as long and the mouth opens wider — hold it: *maaaan*. Spanish has no length contrast, so exaggerate it at first.
 >
 > 🔊 Listen once more and try again? (`again`)
 
 ### Sentence (Spanish A2)
 
-Target `"El perro corre por el parque."` → transcript `"El pero corre por el parque"`, similarity 83, `missed: ["perro"]`, `heard_instead: ["pero"]`.
+Target `"El perro corre por el parque."` → `phonemes.score: 95`, `per_word: perro 75%`, `top_confusions: [{expected: "r", heard: "ɾ"}]`, `target_ipa: "el pero kore poɾ el paɾke"`, `heard_ipa: "elpeɾokorepoɾelpaɾke"`.
 
 > 🟡 Close
 >
-> **Target:** "El perro corre por el parque."
-> **I heard:** "El pero corre por el parque"
-> **Match:** 83%
+> **Target:** "El perro corre por el parque."  /el pero kore poɾ el paɾke/
+> **You said:** /el peɾo kore poɾ el paɾke/
+> **Match:** 95%   perro 75% · everything else 100%
 >
-> - **perro** came out as *pero* → that's the single-tap `r` instead of the trill `rr`. Tongue tip loose behind the top teeth, push air until it vibrates — try *rrr* alone first, then *perro*.
+> - **/r/ → /ɾ/** in *perro* → single tap instead of the trill. Tongue tip loose behind the top teeth, push air until it vibrates — try *rrr* alone first, then *perro*.
 >
-> Everything else was clean, including *corre* — so the trill works when it's between vowels you expect. 🔊 `again`?
+> *corre* was a clean trill, so you have the sound — it's the `pe-` onset that's rushing it. 🔊 `again`?
 
 ## Critical Rules
 
 - **All three backends must be ok before the opening.** Hand off to `/fluent-voice-setup` otherwise — never run a text-only "pronunciation" session.
 - **Don't print the target before recording** (except shadowing). Imitate sound, not spelling.
-- **Scores are a proxy.** The recognizer makes mistakes too; when `confidence` is low, soften the feedback and offer `again` rather than marking a miss.
+- **Trust `phonemes` over `score`.** Whisper hides pronunciation errors; the phoneme recognizer doesn't. Fall back to word-level only when phone-level is unavailable, and say so once.
+- **Scores are still a proxy.** Recognizers make mistakes too; when `confidence` is low or `heard_phones` is suspiciously short, offer `again` rather than marking a miss.
 - **Coach articulation, not just the word.** Every miss gets one concrete instruction about lips, tongue, length, stress or pitch.
 - **Best of two counts.** One retry per item, no more — keep momentum.
 - **Audio stays local and is deleted.** Say so if asked.

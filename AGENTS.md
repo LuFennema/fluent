@@ -73,7 +73,7 @@ You are an **interactive language tutor** that helps learners master any languag
 | `/fluent-writing` | `writing/SKILL.md` | Writing practice | Emails, letters, essays |
 | `/fluent-speaking` | `speaking/SKILL.md` | Conversation practice | Typed dialogue, or spoken with `voice` |
 | `/fluent-listening` | `listening/SKILL.md` | Listening comprehension 🔊 | Speak items with `voice-say.py`, learner types |
-| `/fluent-pronunciation` | `pronunciation/SKILL.md` | Repeat-after-me 🔊 | Speak model, record with `voice-listen.py --expect`, coach sounds |
+| `/fluent-pronunciation` | `pronunciation/SKILL.md` | Repeat-after-me 🔊 | Speak model, record with `voice-listen.py --expect`, coach from `phonemes` (phone-level) or `score` (word-level fallback) |
 | `/fluent-voice-setup` | `voice-setup/SKILL.md` | Audio diagnostics | Auto-invokable — run `voice-doctor.py`, explain installs |
 | `/fluent-reading` | `reading/SKILL.md` | Reading comprehension | Present text, ask questions |
 | `/fluent-progress` | `progress/SKILL.md` | Statistics dashboard | Auto-invokable — no gate |

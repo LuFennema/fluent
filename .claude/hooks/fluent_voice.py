@@ -60,6 +60,27 @@ except Exception:  # pragma: no cover - fallback when imported from elsewhere
     def data_dir() -> Path:  # type: ignore
         return Path.home() / ".claude" / "fluent-data"
 
+try:
+    import fluent_server  # type: ignore
+except Exception:  # pragma: no cover
+    fluent_server = None  # type: ignore
+
+
+def _server_call(req: dict, timeout: float = 600.0) -> Optional[dict]:
+    """Ask the long-lived voice server; None when it isn't available. Spawns it
+    in the background on first use so the *next* call is fast."""
+    if fluent_server is None or not fluent_server.enabled():
+        return None
+    try:
+        if not fluent_server.is_running():
+            fluent_server.ensure_server(wait=float(os.environ.get("FLUENT_VOICE_SERVER_WAIT", "0")))
+            if not fluent_server.is_running():
+                return None
+        res = fluent_server.client_call(req, timeout=timeout)
+        return res if isinstance(res, dict) else None
+    except Exception:
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Language table
@@ -438,6 +459,14 @@ def kokoro_voice_for(language: str | None) -> Optional[tuple[str, str]]:
 def kokoro_synthesize(text: str, lang_code: str, voice: str, out: Path, rate: float = 1.0) -> None:
     """Run Kokoro in a child interpreter so the torch import never lands in the
     caller's process (and a crash there can't take the hook down with it)."""
+    res = _server_call({"op": "tts", "text": text, "lang": lang_code, "voice": voice, "out": str(out),
+                        "rate": float(rate), "repo": KOKORO_REPO})
+    if res is not None:
+        if res.get("ok") and out.exists():
+            return
+        if res.get("error") and "kokoro produced no audio" in res["error"]:
+            raise RuntimeError("kokoro: " + res["error"])
+        # server failed for an environmental reason -> try the one-shot path below
     args = json.dumps({"text": text, "lang": lang_code, "voice": voice, "out": str(out),
                        "rate": float(rate), "repo": KOKORO_REPO})
     env = dict(os.environ, PYTHONWARNINGS="ignore")
@@ -446,6 +475,144 @@ def kokoro_synthesize(text: str, lang_code: str, voice: str, out: Path, rate: fl
     if r.returncode != 0:
         tail = (r.stderr or r.stdout).strip().splitlines()[-1:] or ["kokoro failed"]
         raise RuntimeError(f"kokoro: {tail[0]}")
+
+
+# ---------------------------------------------------------------------------
+# TTS cache, listening variety (alternate voices, background noise)
+# ---------------------------------------------------------------------------
+
+KOKORO_ALT_VOICES: dict[str, list[str]] = {
+    "a": ["af_heart", "af_bella", "af_nicole", "am_adam", "am_michael"],
+    "b": ["bf_emma", "bf_isabella", "bm_george", "bm_lewis"],
+    "e": ["ef_dora", "em_alex", "em_santa"],
+    "f": ["ff_siwis"],
+    "i": ["if_sara", "im_nicola"],
+    "p": ["pf_dora", "pm_alex", "pm_santa"],
+    "h": ["hf_alpha", "hf_beta", "hm_omega", "hm_psi"],
+    "j": ["jf_alpha", "jf_gongitsune", "jm_kumo"],
+    "z": ["zf_xiaobei", "zf_xiaoni", "zm_yunjian", "zm_yunxi"],
+}
+
+PIPER_ALT_VOICES: dict[str, list[str]] = {
+    "nl": ["nl_NL-mls-medium", "nl_BE-nathalie-medium", "nl_BE-rdh-medium"],
+    "de": ["de_DE-thorsten-medium", "de_DE-karlsson-low", "de_DE-kerstin-low"],
+    "es": ["es_ES-davefx-medium", "es_ES-sharvard-medium", "es_MX-claude-high", "es_MX-ald-medium"],
+    "fr": ["fr_FR-siwis-medium", "fr_FR-upmc-medium", "fr_FR-tom-medium"],
+    "en": ["en_US-lessac-medium", "en_US-amy-medium", "en_US-ryan-medium", "en_GB-alan-medium"],
+    "ru": ["ru_RU-irina-medium", "ru_RU-denis-medium", "ru_RU-dmitri-medium"],
+    "it": ["it_IT-paola-medium", "it_IT-riccardo-x_low"],
+    "pt": ["pt_BR-faber-medium", "pt_BR-edresson-low"],
+}
+
+
+def random_voice(backend: Optional[str], language: str | None) -> Optional[str]:
+    """A random voice for `backend` in `language` (None = engine default)."""
+    import random
+    iso, _ = lang_codes(language)
+    if backend == "kokoro":
+        entry = kokoro_voice_for(language)
+        pool = KOKORO_ALT_VOICES.get(entry[0], []) if entry else []
+    elif backend == "piper":
+        # only voices already on disk, so variety never triggers extra downloads
+        pool = [v for v in PIPER_ALT_VOICES.get(iso, [])
+                if (piper_models_dir() / f"{v}.onnx").exists()]
+    elif backend == "say":
+        pool = _macos_voices_for(lang_codes(language)[1])
+    else:
+        pool = []
+    return random.choice(pool) if pool else None
+
+
+def _macos_voices_for(bcp47: str) -> list[str]:
+    try:
+        out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return []
+    iso = bcp47.split("-")[0]
+    return [m.group(1).strip() for line in out.splitlines()
+            if (m := re.match(r"^(.+?)\s{2,}([a-z]{2,3}_[A-Za-z]{2,})\s+#", line))
+            and m.group(2).startswith(iso + "_") and "(" not in m.group(1)]
+
+
+def _play_maybe_noisy(wav: Path, noise: float) -> None:
+    if noise <= 0:
+        play_wav(wav)
+        return
+    noisy = _with_noise(wav, noise)
+    try:
+        play_wav(noisy)
+    finally:
+        if noisy != wav:
+            try:
+                noisy.unlink()
+            except Exception:
+                pass
+
+
+def tts_cache_dir() -> Path:
+    d = Path(os.environ.get("FLUENT_TTS_CACHE_DIR") or (data_dir() / ".voice" / "cache"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def tts_cache_path(backend: str, voice: str, rate: float, text: str) -> Optional[Path]:
+    """Where a synthesized sentence is cached, or None when caching is off."""
+    if os.environ.get("FLUENT_TTS_CACHE", "1") in ("0", "false", "no"):
+        return None
+    import hashlib
+    key = hashlib.sha1(f"{backend}|{voice}|{rate:.2f}|{text}".encode("utf-8")).hexdigest()
+    return tts_cache_dir() / f"{key}.wav"
+
+
+def _prune_tts_cache(max_mb: float | None = None) -> None:
+    """Keep the cache under FLUENT_TTS_CACHE_MB (default 200) by dropping the oldest files."""
+    limit = float(max_mb or os.environ.get("FLUENT_TTS_CACHE_MB", "200")) * 1024 * 1024
+    files = sorted(tts_cache_dir().glob("*.wav"), key=lambda f: f.stat().st_mtime)
+    total = sum(f.stat().st_size for f in files)
+    for f in files:
+        if total <= limit:
+            break
+        try:
+            total -= f.stat().st_size
+            f.unlink()
+        except Exception:
+            pass
+
+
+def _with_noise(wav: Path, level: float) -> Path:
+    """Mix pink-ish background noise into a WAV (level 0..1, ~0.1 = café, 0.3 = street).
+    Needs numpy; without it the clean file is returned."""
+    try:
+        import numpy as np  # type: ignore
+    except Exception:
+        return wav
+    level = max(0.0, min(1.0, level))
+    with wave.open(str(wav), "rb") as w:
+        n, sr, ch, sw = w.getnframes(), w.getframerate(), w.getnchannels(), w.getsampwidth()
+        raw = w.readframes(n)
+    if sw != 2:
+        return wav
+    sig = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    rng = np.random.default_rng()
+    white = rng.standard_normal(len(sig)).astype(np.float32)
+    # cheap pink-ish filter: one-pole low-pass on white noise
+    pink = np.empty_like(white)
+    acc = 0.0
+    a = 0.985
+    for i in range(len(white)):
+        acc = a * acc + (1 - a) * white[i]
+        pink[i] = acc
+    pink /= (np.abs(pink).max() or 1.0)
+    speech_rms = float(np.sqrt(np.mean(sig ** 2))) or 0.1
+    mixed = sig + pink * speech_rms * level * 3.0
+    mixed = np.clip(mixed, -1.0, 1.0)
+    out = recordings_dir() / f"noisy-{os.getpid()}-{int(time.time() * 1000)}.wav"
+    with wave.open(str(out), "wb") as w:
+        w.setnchannels(ch)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((mixed * 32767).astype("<i2").tobytes())
+    return out
 
 
 def system_tts_backend() -> Optional[str]:
@@ -489,13 +656,19 @@ def _is_model_ref(voice: str | None) -> bool:
                             or re.fullmatch(r"[a-z]{2}_[a-z]+", voice) is not None)
 
 
-def speak(text: str, language: str | None = None, rate: float = 1.0, voice: str | None = None) -> dict:
-    """Speak `text` aloud. Blocks until playback finishes. Returns a result dict."""
+def speak(text: str, language: str | None = None, rate: float = 1.0, voice: str | None = None,
+          noise: float = 0.0) -> dict:
+    """Speak `text` aloud. Blocks until playback finishes. Returns a result dict.
+
+    voice="random" picks one of the engine's voices for the language (listening
+    variety); noise in 0..1 mixes background noise in (neural engines only)."""
     text = text.strip()
     if not text:
         return {"ok": False, "error": "empty text"}
     iso, bcp = lang_codes(language)
     backend = tts_backend(language)
+    if voice == "random":
+        voice = random_voice(backend, language)
     started = time.time()
     extra: dict = {}
     model: dict = {}
@@ -504,6 +677,8 @@ def speak(text: str, language: str | None = None, rate: float = 1.0, voice: str 
         if voice and re.fullmatch(r"[a-z]{2}_[a-z]+", voice):
             kvoice = voice
         extra = {"voice": kvoice}
+    if noise > 0 and backend not in ("kokoro", "piper"):
+        extra["noise_ignored"] = "background noise needs a neural engine (kokoro/piper)"
     elif backend == "piper":
         model = piper_model_path(voice if _is_model_ref(voice) else None, language)
         if model.get("ok"):
@@ -519,18 +694,27 @@ def speak(text: str, language: str | None = None, rate: float = 1.0, voice: str 
         voice = None  # a neural voice name means nothing to the OS engine
     try:
         if backend in ("kokoro", "piper"):
-            out = recordings_dir() / f"tts-{os.getpid()}-{int(time.time() * 1000)}.wav"
-            try:
-                if backend == "kokoro":
-                    kokoro_synthesize(text, lang_code, kvoice, out, rate=rate)
-                else:
-                    piper_synthesize(text, model["model"], out, rate=rate)
-                play_wav(out)
-            finally:
+            vkey = kvoice if backend == "kokoro" else model["voice"]
+            cached = tts_cache_path(backend, vkey, rate, text)
+            if cached and cached.exists():
+                extra["cached"] = True
+                _play_maybe_noisy(cached, noise)
+            else:
+                out = cached or recordings_dir() / f"tts-{os.getpid()}-{int(time.time() * 1000)}.wav"
                 try:
-                    out.unlink()
-                except Exception:
-                    pass
+                    if backend == "kokoro":
+                        kokoro_synthesize(text, lang_code, kvoice, out, rate=rate)
+                    else:
+                        piper_synthesize(text, model["model"], out, rate=rate)
+                    _play_maybe_noisy(out, noise)
+                finally:
+                    if not cached:
+                        try:
+                            out.unlink()
+                        except Exception:
+                            pass
+                if cached:
+                    _prune_tts_cache()
         elif backend == "custom":
             cmd = os.environ["FLUENT_TTS_CMD"].format(text=shlex.quote(text), lang=iso)
             subprocess.run(cmd, shell=True, check=True, timeout=120)
@@ -703,7 +887,9 @@ def stt_backend() -> Optional[str]:
     return None
 
 
-def transcribe(audio_file: str | Path, language: str | None = None) -> dict:
+def transcribe(audio_file: str | Path, language: str | None = None, prompt: str | None = None) -> dict:
+    """Transcribe a WAV. `prompt` (names, session vocabulary) biases Whisper toward
+    expected words — use it for conversation, never for pronunciation scoring."""
     iso, _ = lang_codes(language)
     backend = stt_backend()
     model_name = os.environ.get("FLUENT_WHISPER_MODEL", "small")
@@ -714,11 +900,16 @@ def transcribe(audio_file: str | Path, language: str | None = None) -> dict:
             text = subprocess.run(cmd, shell=True, check=True, capture_output=True,
                                   text=True, timeout=300).stdout.strip()
             conf = None
+        elif backend == "faster-whisper" and (srv := _server_call(
+                {"op": "stt", "file": str(audio_file), "lang": iso, "model": model_name, "prompt": prompt})) \
+                and srv.get("ok"):
+            text, conf = srv["transcript"], srv.get("confidence")
+            backend = "faster-whisper (server)"
         elif backend == "faster-whisper":
             from faster_whisper import WhisperModel  # type: ignore
             model = WhisperModel(model_name, device="auto", compute_type="auto")
             segments, info = model.transcribe(str(audio_file), language=iso, beam_size=5,
-                                              vad_filter=True)
+                                              vad_filter=True, initial_prompt=prompt)
             segs = list(segments)
             text = " ".join(s.text.strip() for s in segs).strip()
             probs = [getattr(s, "avg_logprob", None) for s in segs]
@@ -728,7 +919,7 @@ def transcribe(audio_file: str | Path, language: str | None = None) -> dict:
         elif backend == "openai-whisper":
             import whisper  # type: ignore
             model = whisper.load_model(model_name)
-            res = model.transcribe(str(audio_file), language=iso, fp16=False)
+            res = model.transcribe(str(audio_file), language=iso, fp16=False, initial_prompt=prompt)
             text = res.get("text", "").strip()
             conf = None
         elif backend == "whisper.cpp":
@@ -846,7 +1037,7 @@ def doctor_report() -> dict:
         "env": {k: os.environ.get(k) for k in (
             "FLUENT_TTS_CMD", "FLUENT_TTS_VOICE", "FLUENT_STT_CMD", "FLUENT_WHISPER_MODEL",
             "FLUENT_WHISPER_CPP_MODEL", "FLUENT_MIC_DEVICE", "FLUENT_TTS_ENGINE",
-            "FLUENT_KOKORO_VOICE", "FLUENT_KOKORO_REPO",
+            "FLUENT_KOKORO_VOICE", "FLUENT_KOKORO_REPO", "FLUENT_VOICE_SERVER", "FLUENT_TTS_CACHE",
             "FLUENT_PIPER_VOICE", "FLUENT_PIPER_MODELS_DIR", "FLUENT_PIPER_AUTO_DOWNLOAD",
         ) if os.environ.get(k)},
     }

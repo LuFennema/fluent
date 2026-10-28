@@ -321,6 +321,8 @@ Fluent can **speak** and **listen** — entirely on your machine.
 | 🔊 Text-to-speech | Reads sentences, dialogues and model pronunciations aloud | **Kokoro** (neural, best quality) → **Piper** (neural, 40+ languages) → OS engine: macOS `say` · Linux `espeak-ng` · Windows SAPI · `pyttsx3` · your own via `FLUENT_TTS_CMD` |
 | 🎙️ Microphone | Records your answer, stops when you go quiet | `sounddevice`+`numpy` (pip) · `ffmpeg` · `sox` · `arecord` |
 | 📝 Speech-to-text | Transcribes what you said in the target language | `faster-whisper` (pip) · `openai-whisper` · whisper.cpp · your own via `FLUENT_STT_CMD` |
+| 👂 Phoneme recognizer *(optional)* | Hears the **sounds** you actually made, for phone-level pronunciation scoring | wav2vec2 (`pip install transformers torch soundfile`) + espeak-ng / `espeakng-loader` for the target IPA |
+| ⚡ Voice server | Keeps the models loaded so every sentence after the first is instant | automatic; `voice-server.py status` |
 
 **Setup** (macOS / Linux / Windows):
 
@@ -328,6 +330,7 @@ Fluent can **speak** and **listen** — entirely on your machine.
 pip install faster-whisper sounddevice numpy      # microphone + speech recognition
 pip install kokoro soundfile                      # natural voices (en/es/fr/it/pt-BR/hi/ja/zh)
 pip install piper-tts                             # natural voices for 40+ other languages (nl, de, ru, pl, sv, tr, ar, …)
+pip install espeakng-loader transformers          # phone-level pronunciation scoring (optional, ~1.2 GB model)
 # Linux also: sudo apt install espeak-ng ffmpeg
 ```
 
@@ -343,7 +346,16 @@ Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a
 | `/fluent-pronunciation` | ✅ | ✅ | ✅ |
 | `/fluent-speaking voice` | ✅ | ✅ | ✅ |
 
-**How pronunciation scoring works.** You hear the model, you repeat it, Whisper transcribes you, and `voice-listen.py --expect` returns a word-level similarity plus the words that were missed or misheard. A transcription miss is treated as a pronunciation signal: if the recognizer heard *pero* when the target was *perro*, your `rr` is drifting toward a single tap — and that is exactly what the feedback coaches. Scores are a proxy, so when the recognizer reports low confidence the skill asks you to repeat rather than marking you wrong.
+**How pronunciation scoring works.** You hear the model, you repeat it, and `voice-listen.py --expect` scores you two ways:
+
+- **Phone level** (when the optional recognizer is installed): espeak-ng turns the target sentence into IPA (*el perro* → /el pero/), a wav2vec2 phoneme model with **no language model** writes down the sounds you actually produced (/el peɾo/), and the two are aligned phone by phone and attributed to words. The result names the exact confusion — `/r/ → /ɾ/ in perro`, `/aː/ → /ɑ/ in maan` — plus a per-word accuracy, so the tutor can coach articulation instead of guessing.
+- **Word level** (always): the Whisper transcript compared word by word. It's the fallback, and it is lenient on purpose: Whisper is a language model and silently corrects *pero* to *perro* when *perro* fits the sentence, which is exactly why it can't be the primary pronunciation signal.
+
+Scores are still a proxy — recognizers make mistakes — so on low confidence the skill asks you to repeat rather than marking you wrong.
+
+**Listening variety.** `voice-say.py --variety` plays each item with a random voice for your language at 0.9-1.1× speed, and `--noise 0.1`…`0.3` mixes in café/street background noise, so your ear doesn't tune to a single synthetic speaker in a silent room. `/fluent-listening` switches these on as you level up or when you type `harder`.
+
+**Speed.** The first neural sentence loads models (3-10 s). After that a small local server keeps Kokoro, Whisper and the phoneme model in memory, and sentences are cached on disk, so the rest of the session plays without pauses. It starts itself on first use and exits after 30 idle minutes.
 
 **Useful environment variables**
 
@@ -355,6 +367,10 @@ Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a
 | `FLUENT_PIPER_VOICE` | Piper voice id (e.g. `nl_BE-nathalie-medium`) or path to a local `.onnx` |
 | `FLUENT_PIPER_AUTO_DOWNLOAD` | `0` to never download; place models in `<data_dir>/.voice/models/` yourself |
 | `FLUENT_TTS_VOICE` | OS-engine voice name (e.g. `Xander` on macOS for Dutch) |
+| `FLUENT_PHONEME_MODEL` | wav2vec2 phoneme model (default `facebook/wav2vec2-xlsr-53-espeak-cv-ft`) |
+| `FLUENT_PHONEME_CMD` | Your own phoneme recognizer: prints space-separated IPA for `{file}` |
+| `FLUENT_VOICE_SERVER` | `0` to disable the model server; `FLUENT_VOICE_SERVER_IDLE` seconds before it exits (1800) |
+| `FLUENT_TTS_CACHE` / `FLUENT_TTS_CACHE_MB` | `0` to disable the sentence cache; size cap in MB (200) |
 | `FLUENT_MIC_DEVICE` | Pick a microphone when you have several |
 | `FLUENT_TTS_CMD` / `FLUENT_STT_CMD` | Plug in any engine: `{text}`/`{lang}` and `{file}`/`{lang}` placeholders |
 | `FLUENT_WHISPER_CPP_MODEL` | Path to a ggml model to use whisper.cpp from PATH |
@@ -367,6 +383,8 @@ Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a
 python3 .claude/hooks/voice-say.py --lang Dutch "Goedemiddag!"            # speak
 python3 .claude/hooks/voice-listen.py --lang Dutch --expect "Goedemiddag"  # record, transcribe, score
 python3 .claude/hooks/voice-doctor.py --test                               # diagnose + test sentence
+python3 .claude/hooks/voice-say.py --lang Spanish --variety --noise 0.1 "…"  # listening drill: random voice, speed, café noise
+python3 .claude/hooks/voice-server.py status                               # which models are loaded
 ```
 
 ---
@@ -420,7 +438,7 @@ The system automatically adjusts:
 - **AI Model:** Claude (any Claude Code-supported model)
 - **Data Format:** JSON (human-readable)
 - **Skills:** Markdown `SKILL.md` files with YAML frontmatter (15 total — 11 learner-facing + 4 helper)
-- **Voice:** `.claude/hooks/fluent_voice.py` — local TTS (Kokoro / Piper / `say` / `espeak-ng` / SAPI / `pyttsx3`), mic capture (`sounddevice` / `ffmpeg` / `sox` / `arecord`), STT (`faster-whisper` / `openai-whisper` / whisper.cpp), word-level pronunciation scoring. Any backend can be swapped via `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`.
+- **Voice:** `.claude/hooks/fluent_voice.py` — local TTS (Kokoro / Piper / `say` / `espeak-ng` / SAPI / `pyttsx3`), mic capture (`sounddevice` / `ffmpeg` / `sox` / `arecord`), STT (`faster-whisper` / `openai-whisper` / whisper.cpp), sentence cache, listening variety. `fluent_phonemes.py` — phone-level pronunciation scoring (espeak-ng G2P + wav2vec2 phoneme recognizer, alignment, per-word attribution). `fluent_server.py` — local model server. Any backend can be swapped via `FLUENT_TTS_CMD` / `FLUENT_STT_CMD` / `FLUENT_PHONEME_CMD`.
 - **Hooks:** Python + Bash, triggered on SessionStart / SessionEnd / PostToolUse / PreCompact
 - **Algorithm:** SM-2 (SuperMemo 2)
 - **Version Control:** Git
@@ -470,7 +488,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 We're especially interested in:
 
 1. 🌐 **Language-specific optimizations** - Grammar rules, common errors for specific languages
-2. 🎵 **Audio features** - More STT backends (Vosk, Parakeet), per-phoneme scoring, Kokoro/Piper voices for more languages, listening with real recordings
+2. 🎵 **Audio features** - More STT backends (Vosk, Parakeet), prosody/stress scoring, Kokoro/Piper voices for more languages, listening with real recordings
 3. 📊 **Visual enhancements** - Better progress charts, statistics
 4. 📱 **Mobile support** - Companion app or mobile interface
 5. ⚡ **Performance** - Optimize data loading, improve speed

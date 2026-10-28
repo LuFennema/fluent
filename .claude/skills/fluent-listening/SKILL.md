@@ -49,6 +49,7 @@ I'll **speak** sentences and short dialogues out loud. You type what you hear, o
 - `replay` — hear it again
 - `slower` — hear it again at 0.8× speed
 - `skip` — show the text and move on
+- `harder` — different voices, varied speed, background noise
 
 **Level:** {CEFR} · **Duration:** 10-15 min · **Items:** ~10
 
@@ -73,6 +74,14 @@ Speak **without printing the sentence**:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-say.py" --quiet --lang "{target_language}" "{sentence}"
+```
+
+**Variety (the point of listening practice).** One voice at one speed in silence trains the ear for exactly one speaker. Once the learner clears 3 items in a row at normal speed, or at B1+ from the start, add `--variety` (random voice for the language + speed 0.9-1.1×), and from B2 or on `harder`, `--noise 0.1` (café) / `--noise 0.2` (street). Keep dictation items clean; put variety on comprehension items first. Don't repeat the same voice on consecutive dialogue lines — pass `--voice random` per line, or alternate two explicit voices (Kokoro Spanish: `ef_dora` / `em_alex`). Noise and alternate voices need a neural engine (Kokoro/Piper); with an OS voice the flags are ignored and the result says so. `replay` keeps the same voice and settings as the original play — re-run with the same explicit `--voice` and `--rate` the first call reported.
+
+Pre-warm the engine at session start (no-op if already running) so items play without a pause:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-server.py" start
 ```
 
 For dialogues, call once per line so the pause between speakers is natural; alternate `--voice` when the engine has two voices for the language (Kokoro: e.g. `ef_dora` / `em_alex`; macOS: see `say -v ?`), otherwise prefix lines with a spoken name.
@@ -112,13 +121,13 @@ Handle controls: `replay` → run voice-say again, note `replays += 1` for the i
 
 **Gap-fill** — exact word match; near-miss (wrong ending) is 🟡 with the ending rule explained.
 
-Count an item with 2+ replays as correct but flag `needed_replays` in the session file — it feeds the next session's speed choice.
+Count an item with 2+ replays as correct but flag `needed_replays` in the session file — it feeds the next session's speed choice. Record per item which voice, rate and noise were used; a miss at 1.1× with noise is not the same gap as a miss at 0.8× in silence.
 
 Use `fluent-feedback-formatter` severity tags for consistency.
 
 ### 6. Adapt mid-session
 
-- 3 perfect in a row → next sentences +2 words, or normal speed if you were at 0.8×.
+- 3 perfect in a row → next sentences +2 words, or normal speed if you were at 0.8×, or switch on `--variety` if not yet on, or add `--noise 0.1`.
 - 2 misses in a row → shorter sentences, offer `slower` proactively, repeat the troublesome sound in the next item.
 
 ### 7. Session summary

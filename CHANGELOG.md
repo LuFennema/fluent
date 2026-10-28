@@ -32,9 +32,38 @@ All notable changes to Fluent will be documented in this file.
   note. `preferences.voice: true` in the profile makes it the default.
 - `/fluent-learn` menu gains Listening and Pronunciation options when the
   audio stack is available; the adaptive mix may include listening items.
-- `tests/test_voice.py` — 33 tests covering language mapping, scoring,
-  engine selection/fallback (Kokoro → Piper → OS), Piper model download and
-  all three CLIs with simulated engines.
+- **Phone-level pronunciation scoring** (`fluent_phonemes.py`). The target
+  sentence is phonemized with espeak-ng (system binary or the pip-only
+  `espeakng-loader`), the recording is run through an acoustic wav2vec2
+  phoneme recognizer (`facebook/wav2vec2-xlsr-53-espeak-cv-ft`, no language
+  model), and the two phone sequences are aligned and attributed to words.
+  `voice-listen.py --expect` now returns `phonemes: {score, per_word,
+  weak_words, top_confusions, target_ipa, heard_ipa}` next to the lenient
+  Whisper word-level `score`. `/fluent-pronunciation` coaches from the
+  phone-level result (e.g. `/r/ → /ɾ/ in perro`) and falls back to word level
+  with a notice. Optional: without the recognizer the target IPA is still shown.
+- **Voice server** (`fluent_server.py`, `voice-server.py start|stop|status`).
+  A localhost JSON-lines server keeps Kokoro, Whisper and the phoneme model
+  loaded between sentences; clients fall back to the one-shot path when it
+  isn't running. Starts on first neural use, exits after 30 idle minutes,
+  token-protected, `FLUENT_VOICE_SERVER=0` disables.
+- **TTS sentence cache**: neural audio is cached in `<data_dir>/.voice/cache`
+  keyed by engine/voice/rate/text (200 MB LRU cap), so repeated review items
+  replay instantly.
+- **Listening variety**: `voice-say.py --voice random` (per-language voice
+  pools for Kokoro, downloaded Piper voices and macOS `say`), `--variety`
+  (random voice + 0.9-1.1× speed) and `--noise 0..1` (pink-noise café/street
+  mix, numpy). `/fluent-listening` gains a `harder` control and turns these on
+  as the learner levels up.
+- `voice-listen.py --prompt` passes an `initial_prompt` (names, session
+  vocabulary) to Whisper for conversation turns in `/fluent-speaking voice`;
+  it is deliberately ignored together with `--expect`.
+- `voice-doctor.py` reports the phonemizer, the phoneme recognizer, whether
+  phone-level scoring is on, and the voice server state.
+- Tests: `tests/test_voice.py` (33) and `tests/test_phonemes.py` (22) cover
+  language mapping, scoring, engine selection/fallback, Piper download,
+  phoneme alignment, a live server with stub models, the cache, noise mixing
+  and all CLIs with simulated engines.
 
 ### Changed
 

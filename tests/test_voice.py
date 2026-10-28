@@ -396,7 +396,7 @@ class TestCLIs(unittest.TestCase):
         rep = json.loads(r.stdout)
         self.assertFalse(rep["ok"])
         self.assertEqual([c["component"] for c in rep["checks"]],
-                         ["tts", "kokoro", "piper", "microphone", "speech-to-text"])
+                         ["tts", "kokoro", "piper", "microphone", "speech-to-text", "g2p", "phoneme-recognizer"])
 
         env = dict(self.env, FLUENT_TTS_CMD="true", FLUENT_STT_CMD="true",
                    FLUENT_MIC_FAKE="1")

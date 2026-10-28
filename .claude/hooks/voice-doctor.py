@@ -25,6 +25,8 @@ from fluent_paths import force_utf8_io  # noqa: E402
 from fluent_voice import (doctor_report, emit, kokoro_available, kokoro_voice_for,  # noqa: E402
                           piper_available, piper_model_path, piper_voice_for, speak,
                           tts_backend)
+import fluent_phonemes  # noqa: E402
+import fluent_server  # noqa: E402
 
 LABELS = {
     "tts": ("🔊", "Text-to-speech", "listening drills, hearing the tutor"),
@@ -32,7 +34,10 @@ LABELS = {
     "piper": ("🎶", "Piper", "neural voices for 40+ languages (optional upgrade)"),
     "microphone": ("🎙️", "Microphone", "pronunciation and spoken conversation"),
     "speech-to-text": ("📝", "Speech-to-text", "understanding what you said"),
+    "g2p": ("🔤", "Phonemizer", "target pronunciation in IPA (optional, for phone-level scoring)"),
+    "phoneme-recognizer": ("👂", "Phoneme recognizer", "hearing which sounds you actually produced (optional)"),
 }
+OPTIONAL = ("kokoro", "piper", "g2p", "phoneme-recognizer")
 
 
 def _profile_language():
@@ -95,6 +100,14 @@ def main() -> int:
         return 0 if res["ok"] else 2
 
     rep = doctor_report()
+    ph = fluent_phonemes.doctor()
+    rep["checks"].append({"component": "g2p", "backend": ph["g2p"]["backend"], "ok": ph["g2p"]["ok"],
+                          "hint": ph["g2p"]["hint"], "alternatives": []})
+    rep["checks"].append({"component": "phoneme-recognizer", "backend": ph["recognizer"]["backend"],
+                          "ok": ph["recognizer"]["ok"], "hint": ph["recognizer"]["hint"], "alternatives": [],
+                          "model": ph["recognizer"]["model"]})
+    rep["phoneme_scoring"] = ph["g2p"]["ok"] and ph["recognizer"]["ok"]
+    rep["voice_server"] = {"enabled": fluent_server.enabled(), "running": fluent_server.is_running()}
     if a.json:
         emit(rep)
         return 0 if rep["ok"] else 2
@@ -102,7 +115,7 @@ def main() -> int:
     print(f"🌍 Fluent voice check — {rep['platform']}, Python {rep['python']}\n")
     for c in rep["checks"]:
         icon, label, used_for = LABELS.get(c["component"], ("•", c["component"], ""))
-        optional = c["component"] in ("kokoro", "piper")
+        optional = c["component"] in OPTIONAL
         status = f"✅ {c['backend']}" if c["ok"] else ("➖ not installed (optional)" if optional else "❌ not found")
         print(f"{icon} {label:<16} {status}")
         print(f"   used for: {used_for}")
@@ -123,6 +136,12 @@ def main() -> int:
                 print("   alternatives: " + " | ".join(c["alternatives"]))
         print()
 
+    print("🧪 Phone-level pronunciation scoring: " + ("✅ available" if rep["phoneme_scoring"] else
+          "➖ off (word-level only) — needs the phonemizer and the phoneme recognizer above"))
+    vs = rep["voice_server"]
+    print("⚡ Voice server: " + ("running — models stay loaded between sentences" if vs["running"] else
+          ("not running — starts automatically on first neural use (`voice-server.py start` to pre-warm)"
+           if vs["enabled"] else "disabled (FLUENT_VOICE_SERVER=0)")) + "\n")
     if rep["env"]:
         print("Environment overrides: " + ", ".join(f"{k}={v}" for k, v in rep["env"].items()) + "\n")
 
@@ -133,7 +152,7 @@ def main() -> int:
             print("Tip: `pip install kokoro soundfile` (or `piper-tts`) for much more natural voices — still local.")
     else:
         missing = [c["component"] for c in rep["checks"]
-                   if not c["ok"] and c["component"] not in ("kokoro", "piper")]
+                   if not c["ok"] and c["component"] not in OPTIONAL]
         have_tts = any(c["component"] == "tts" and c["ok"] for c in rep["checks"])
         print("Missing: " + ", ".join(missing) + ".")
         if have_tts:

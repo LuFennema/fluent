@@ -15,8 +15,11 @@ Fluent's audio features run **entirely on the learner's machine** — no API key
 | 🔊 Text-to-speech | `/fluent-listening`, voice replies in `/fluent-speaking voice`, model pronunciation in `/fluent-pronunciation` | **Kokoro** (pip, best quality, 9 languages) → **Piper** (pip, good, 40+ languages) → OS engine: macOS `say` · `espeak-ng` / `espeak` / `spd-say` (Linux) · PowerShell SAPI (Windows) · `pyttsx3` · `$FLUENT_TTS_CMD` |
 | 🎙️ Microphone | `/fluent-pronunciation`, `/fluent-speaking voice` | `sounddevice`+`numpy` (pip, silence-aware) · `ffmpeg` · `sox` (`rec`) · `arecord` |
 | 📝 Speech-to-text | `/fluent-pronunciation`, `/fluent-speaking voice` | `faster-whisper` (pip, recommended) · `openai-whisper` · whisper.cpp (`FLUENT_WHISPER_CPP_MODEL`) · `$FLUENT_STT_CMD` |
+| 🔤 Phonemizer (optional) | phone-level scoring in `/fluent-pronunciation` — target IPA | `espeak-ng` on PATH · `pip install espeakng-loader` (bundled, any OS) |
+| 👂 Phoneme recognizer (optional) | phone-level scoring — the sounds the learner actually made | `pip install transformers torch soundfile` → wav2vec2 `facebook/wav2vec2-xlsr-53-espeak-cv-ft` (~1.2 GB, downloaded on first use; `FLUENT_PHONEME_MODEL` to change) · `$FLUENT_PHONEME_CMD` |
+| ⚡ Voice server | keeps Kokoro / Whisper / the phoneme model loaded between sentences | automatic (`voice-server.py start|stop|status`; `FLUENT_VOICE_SERVER=0` disables) |
 
-Everything lives in `.claude/hooks/fluent_voice.py` with three CLIs next to it: `voice-say.py`, `voice-listen.py`, `voice-doctor.py`.
+Everything lives in `.claude/hooks/fluent_voice.py` (+ `fluent_phonemes.py`, `fluent_server.py`) with four CLIs next to them: `voice-say.py`, `voice-listen.py`, `voice-doctor.py`, `voice-server.py`.
 
 ## When to Use
 
@@ -62,26 +65,44 @@ Pre-fetch the model so the first lesson doesn't stall on a download:
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-doctor.py" --download-voice --lang {target_language}
 ```
 
+### 2c. Phone-level pronunciation scoring — worth the download
+
+Without it, `/fluent-pronunciation` scores from the Whisper transcript, which auto-corrects mispronunciations (say *pero*, it writes *perro*). With it, an acoustic recognizer reports the actual sounds and the feedback can say "your /r/ came out as /ɾ/". Two pieces:
+
+```bash
+pip install espeakng-loader                     # phonemizer (or system espeak-ng)
+pip install transformers torch soundfile        # phoneme recognizer; ~1.2 GB model on first use
+```
+
+The doctor prints `Phone-level pronunciation scoring: ✅` when both are present. If the learner already installed Kokoro, torch is there and only `transformers` is new.
+
+### 2d. Speed — the voice server
+
+The first neural sentence of a session loads models (3-10 s). After that, the voice server keeps them in memory and every sentence is near-instant; it starts itself on first use and exits after 30 idle minutes. Synthesized sentences are also cached on disk (`<data_dir>/.voice/cache`, 200 MB cap), so review items replay instantly. Nothing to configure; `python3 .claude/hooks/voice-server.py status` shows what's loaded, `FLUENT_VOICE_SERVER=0` turns it off.
+
 ### 3. Recommended install (copy the block for their OS)
 
 **macOS**
 ```bash
 pip3 install faster-whisper sounddevice numpy   # STT + silence-aware mic
 pip3 install kokoro soundfile                   # or: pip3 install piper-tts  (see table above)
+pip3 install espeakng-loader transformers       # phone-level pronunciation scoring (optional)
 # OS fallback voices: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices
 ```
 
 **Linux (Debian/Ubuntu)**
 ```bash
-sudo apt install espeak-ng ffmpeg               # espeak-ng doubles as Kokoro's phonemizer
+sudo apt install espeak-ng ffmpeg               # espeak-ng doubles as Kokoro's and the scorer's phonemizer
 pip3 install faster-whisper sounddevice numpy
 pip3 install kokoro soundfile                   # or: pip3 install piper-tts
+pip3 install transformers                       # phone-level pronunciation scoring (optional; torch comes with kokoro)
 ```
 
 **Windows (PowerShell or Git Bash)**
 ```powershell
 pip install faster-whisper sounddevice numpy
 pip install kokoro soundfile                    # or: pip install piper-tts
+pip install espeakng-loader transformers        # phone-level pronunciation scoring (optional)
 # OS fallback voices: Settings → Time & Language → Speech → Manage voices
 ```
 
