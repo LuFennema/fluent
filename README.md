@@ -40,6 +40,7 @@ That's it.
 - [Claude Code](https://code.claude.com) installed
 - **Python 3.8+** (most systems already have it — check with `python3 --version`). Install via [python.org](https://www.python.org/downloads/), `brew install python3`, or your distro's package manager. No pip packages needed — Fluent uses only the standard library.
 - **Bash** for the PreCompact backup hook (built-in on macOS/Linux; on Windows use WSL or Git Bash).
+- **Optional, for voice features** (`/fluent-listening`, `/fluent-pronunciation`, `/fluent-speaking voice`): a text-to-speech engine (built into macOS and Windows; `espeak-ng` on Linux), plus `pip install faster-whisper sounddevice numpy` for microphone + speech recognition. Everything runs locally — see [🔊 Voice features](#-voice-features-local-audio). Run `/fluent-voice-setup` to check what your machine has.
 
 ### Verify, update, uninstall
 
@@ -132,6 +133,7 @@ The system uses **evidence-based learning methodologies** including:
 - 🎮 **Gamification** - Streaks, achievements, mastery levels (0-5 stars)
 - 🔄 **Adaptive Difficulty** - Automatically adjusts to your performance (targets 60-70% success rate)
 - 📝 **Multi-Modal Practice** - Writing, speaking, vocabulary, reading, listening
+- 🔊 **Real audio** - Hear the language (local text-to-speech), speak it into your mic, and get pronunciation feedback from local speech recognition (Whisper). No cloud, no API keys.
 - ⚡ **Immediate Feedback** - Clear explanations with every correction
 - 🎨 **Interactive Sessions** - One question at a time, conversational feel
 - 📈 **Progress Visualization** - Detailed statistics and trend analysis
@@ -185,12 +187,12 @@ This system implements proven learning science:
 
 ## 🎮 Available Commands & Skills
 
-Fluent is built as **Claude Code skills** — 12 of them. Skills work two ways:
+Fluent is built as **Claude Code skills** — 15 of them. Skills work two ways:
 
 1. **Type the slash command** (`/fluent-learn`, `/fluent-vocab`, etc.) — you explicitly start a session. Learner-facing skills are gated so they only run this way. No accidental 20-minute session triggered by a chat message.
 2. **Ask naturally** — read-only skills like `/fluent-progress` auto-trigger when you ask "how am I doing?" or "what's my streak?". Helper skills (SM-2 math, feedback formatter, DB updater, session analyzer) auto-load whenever Claude needs them during a session.
 
-All 12 skills appear in your `/` menu so you can always invoke any of them manually.
+All 15 skills appear in your `/` menu so you can always invoke any of them manually.
 
 ### Learner-facing commands
 
@@ -210,8 +212,18 @@ These are the commands you'll use daily. Each is backed by a dedicated skill und
 |---------|--------------|----------------------|
 | **`/fluent-vocab`** | **Flashcard-style vocabulary drills** - Rapid-fire translation practice (target language ↔ native language). Tracks which words you struggle with. | **2-3x per week** - When you need to build vocabulary quickly. Great for preparing for specific topics (travel, business, etc.). |
 | **`/fluent-writing`** | **Writing practice** - Practice emails, letters, essays, or forms in your target language. Get detailed corrections with grammar explanations. | **Daily for exam prep** - Essential if you're preparing for language exams. Also great for building confidence in real-world communication. |
-| **`/fluent-speaking`** | **Conversation practice** - Role-play scenarios through typed dialogue. Practice natural conversations, asking for directions, ordering food, etc. | **2-3x per week** - Builds confidence for real conversations. Typed practice helps you think through responses without pressure. |
+| **`/fluent-speaking`** | **Conversation practice** - Role-play scenarios through typed dialogue, or **spoken** with `/fluent-speaking voice`: the tutor talks out loud and you answer into your microphone. | **2-3x per week** - Builds confidence for real conversations. Start typed to think through responses without pressure; switch to voice when you want the real thing. |
 | **`/fluent-reading`** | **Reading comprehension** - Read short texts (stories, articles, dialogues) then answer comprehension questions. Expands vocabulary in context. | **2-3x per week** - Improves overall understanding. Best for intermediate+ learners. Reading is one of the fastest ways to absorb grammar patterns. |
+
+#### Voice Commands 🔊
+
+These use your speakers and microphone. All audio processing is local (OS text-to-speech + Whisper). Run `/fluent-voice-setup` once to see what's available on your machine.
+
+| Command | What It Does | When & Why to Use It |
+|---------|--------------|----------------------|
+| **`/fluent-listening`** | **Listening comprehension** - The tutor *speaks* sentences and short dialogues; you type what you heard (dictation), fill a gap, or answer a question. Replay and slow-down controls. Needs only text-to-speech. | **2-3x per week** - The skill most apps skip. Trains sound→meaning directly, surfaces the sounds you can't yet hear. |
+| **`/fluent-pronunciation`** | **Repeat-after-me** - Hear a word or sentence, say it into your mic, get a match score and concrete articulation tips for the sounds that drifted. Minimal pairs, sentences, shadowing. Needs TTS + mic + speech-to-text. | **Daily, 10 min** - Pronunciation benefits from day one. Short sessions, immediate feedback. |
+| **`/fluent-voice-setup`** | **Audio check** - Detects your text-to-speech, microphone and speech-recognition backends, tells you exactly what to install for your OS, plays a test sentence. | **Once per machine** - Or whenever a voice skill says something is missing. Auto-invokes when you ask "does voice work?". |
 
 #### Progress Command
 
@@ -244,6 +256,15 @@ These skills don't change what the learner-facing commands do — they let Claud
 /fluent-writing   # Practice real-world writing
 /fluent-learn     # Let AI choose what you need most
 ```
+
+**🔊 Voice Days (2-3x per week, 10-15 min)**
+```bash
+/fluent-pronunciation     # Repeat after me — minimal pairs and sentences
+/fluent-listening         # Dictation and comprehension from audio
+/fluent-speaking voice    # A real spoken conversation
+```
+
+**Why?** Reading and writing don't train your ears or your mouth. Ten minutes of actual sound, a few times a week, is what makes the language usable in person.
 **Why?** Writing solidifies what you learned today. `/fluent-learn` fills in any gaps.
 
 **📊 Weekly Check-In (5 min)**
@@ -284,10 +305,60 @@ The AI follows these guides:
 
 ### Interface Layer
 
-- **Skills** (`.claude/skills/`) — 12 skills total. 8 learner-facing (`/fluent-setup`, `/fluent-learn`, `/fluent-vocab`, `/fluent-writing`, `/fluent-speaking`, `/fluent-reading`, `/fluent-review`, `/fluent-progress`) run when you invoke them. 4 helper skills (`/fluent-sm2-calculator`, `/fluent-feedback-formatter`, `/fluent-db-updater`, `/fluent-session-analyzer`) auto-load whenever Claude needs them during a session — and are also directly `/`-invokable if you want to read the reference.
+- **Skills** (`.claude/skills/`) — 15 skills total. 11 learner-facing (`/fluent-setup`, `/fluent-learn`, `/fluent-vocab`, `/fluent-writing`, `/fluent-speaking`, `/fluent-reading`, `/fluent-review`, `/fluent-listening`, `/fluent-pronunciation`, `/fluent-voice-setup`, `/fluent-progress`) run when you invoke them. 4 helper skills (`/fluent-sm2-calculator`, `/fluent-feedback-formatter`, `/fluent-db-updater`, `/fluent-session-analyzer`) auto-load whenever Claude needs them during a session — and are also directly `/`-invokable if you want to read the reference.
 - **Plugin manifests** (`.claude-plugin/`) — `plugin.json` + `marketplace.json` make Fluent installable via `/plugin marketplace add m98/fluent`.
 - **Automatic Hooks** (`.claude/hooks/`) — SessionStart welcome, SessionEnd backups, PostToolUse JSON validation + backups, PreCompact safety backup. Both `hooks.json` (plugin mode) and `.claude/settings.json` (clone mode) wire them up.
 - **Session Results** (`/results/`) — Detailed practice logs per session, parsed by `fluent-session-analyzer` to plan future sessions.
+
+---
+
+## 🔊 Voice Features (Local Audio)
+
+Fluent can **speak** and **listen** — entirely on your machine.
+
+| Component | What it does | Backends (first found wins) |
+|-----------|--------------|-----------------------------|
+| 🔊 Text-to-speech | Reads sentences, dialogues and model pronunciations aloud | macOS `say` · Linux `espeak-ng`/`espeak`/`spd-say` · Windows SAPI (PowerShell) · `pyttsx3` · your own via `FLUENT_TTS_CMD` |
+| 🎙️ Microphone | Records your answer, stops when you go quiet | `sounddevice`+`numpy` (pip) · `ffmpeg` · `sox` · `arecord` |
+| 📝 Speech-to-text | Transcribes what you said in the target language | `faster-whisper` (pip) · `openai-whisper` · whisper.cpp · your own via `FLUENT_STT_CMD` |
+
+**Setup in one line** (macOS / Linux / Windows):
+
+```bash
+pip install faster-whisper sounddevice numpy      # Linux also: sudo apt install espeak-ng ffmpeg
+```
+
+Then in Claude Code: `/fluent-voice-setup` → it reports what works and plays a test sentence.
+
+**What each voice skill needs**
+
+| | TTS | Mic | STT |
+|---|:---:|:---:|:---:|
+| `/fluent-listening` | ✅ | | |
+| `/fluent-pronunciation` | ✅ | ✅ | ✅ |
+| `/fluent-speaking voice` | ✅ | ✅ | ✅ |
+
+**How pronunciation scoring works.** You hear the model, you repeat it, Whisper transcribes you, and `voice-listen.py --expect` returns a word-level similarity plus the words that were missed or misheard. A transcription miss is treated as a pronunciation signal: if the recognizer heard *pero* when the target was *perro*, your `rr` is drifting toward a single tap — and that is exactly what the feedback coaches. Scores are a proxy, so when the recognizer reports low confidence the skill asks you to repeat rather than marking you wrong.
+
+**Useful environment variables**
+
+| Variable | Purpose |
+|----------|---------|
+| `FLUENT_WHISPER_MODEL` | `tiny` / `base` / `small` (default) / `medium` / `large-v3` — bigger is more accurate, slower, more RAM |
+| `FLUENT_TTS_VOICE` | Force a specific installed voice (e.g. `Xander` on macOS for Dutch) |
+| `FLUENT_MIC_DEVICE` | Pick a microphone when you have several |
+| `FLUENT_TTS_CMD` / `FLUENT_STT_CMD` | Plug in any engine: `{text}`/`{lang}` and `{file}`/`{lang}` placeholders |
+| `FLUENT_WHISPER_CPP_MODEL` | Path to a ggml model to use whisper.cpp from PATH |
+
+**Privacy.** Recordings go to `<data_dir>/.voice/` and are deleted right after transcription unless you pass `--keep`. Nothing is uploaded anywhere.
+
+**Scripts** (all in `.claude/hooks/`, usable on their own):
+
+```bash
+python3 .claude/hooks/voice-say.py --lang Dutch "Goedemiddag!"            # speak
+python3 .claude/hooks/voice-listen.py --lang Dutch --expect "Goedemiddag"  # record, transcribe, score
+python3 .claude/hooks/voice-doctor.py --test                               # diagnose + test sentence
+```
 
 ---
 
@@ -339,7 +410,8 @@ The system automatically adjusts:
 - **Platform:** Claude Code (Anthropic), installable as a plugin or by clone
 - **AI Model:** Claude (any Claude Code-supported model)
 - **Data Format:** JSON (human-readable)
-- **Skills:** Markdown `SKILL.md` files with YAML frontmatter (12 total — 8 learner-facing + 4 helper)
+- **Skills:** Markdown `SKILL.md` files with YAML frontmatter (15 total — 11 learner-facing + 4 helper)
+- **Voice:** `.claude/hooks/fluent_voice.py` — local TTS (`say` / `espeak-ng` / SAPI / `pyttsx3`), mic capture (`sounddevice` / `ffmpeg` / `sox` / `arecord`), STT (`faster-whisper` / `openai-whisper` / whisper.cpp), word-level pronunciation scoring. Any backend can be swapped via `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`.
 - **Hooks:** Python + Bash, triggered on SessionStart / SessionEnd / PostToolUse / PreCompact
 - **Algorithm:** SM-2 (SuperMemo 2)
 - **Version Control:** Git
@@ -389,7 +461,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 We're especially interested in:
 
 1. 🌐 **Language-specific optimizations** - Grammar rules, common errors for specific languages
-2. 🎵 **Audio features** - Pronunciation practice, listening exercises
+2. 🎵 **Audio features** - More TTS/STT backends (Piper, Kokoro, Vosk), per-phoneme scoring, listening with real recordings
 3. 📊 **Visual enhancements** - Better progress charts, statistics
 4. 📱 **Mobile support** - Companion app or mobile interface
 5. ⚡ **Performance** - Optimize data loading, improve speed
@@ -444,7 +516,7 @@ It helps others discover this project and motivates us to keep improving it!
 
 ## 📈 Project Stats
 
-- **Skills:** 12 (8 learner-facing + 4 helper)
+- **Skills:** 15 (11 learner-facing + 4 helper)
 - **Hooks:** 5 automated (SessionStart, SessionEnd, PostToolUse, PreCompact, DB helpers)
 - **Databases:** 6 JSON tracking files
 - **Install paths:** 2 (Claude Code plugin + git clone — both supported)

@@ -1,6 +1,6 @@
 ---
 name: fluent-learn
-description: Main adaptive language-learning session that mixes skills (writing, speaking, vocabulary, reading) and exercise types based on the learner's current level, weak patterns, and due reviews. Triggered only when the learner types /fluent-learn. Greets the learner, shows today's plan, asks what to practice, runs interleaved exercises one at a time, and updates all databases at the end.
+description: Main adaptive language-learning session that mixes skills (writing, speaking, vocabulary, reading, listening, pronunciation) and exercise types based on the learner's current level, weak patterns, and due reviews. Triggered only when the learner types /fluent-learn. Greets the learner, shows today's plan, asks what to practice, runs interleaved exercises one at a time, and updates all databases at the end.
 allowed-tools: Read, Write, Bash
 disable-model-invocation: true
 ---
@@ -53,17 +53,25 @@ Need all 6 DBs. If any missing, direct the learner to `/fluent-setup` and stop.
 3. 📖 Vocabulary (flashcard drills)
 4. 👀 Reading (comprehension)
 5. 🔄 Spaced Review (today's due items)
-6. 🎲 Surprise me! (adaptive mix)
+6. 🎧 Listening (audio dictation & comprehension) 🔊
+7. 🎙️ Pronunciation (repeat after me, microphone) 🔊
+8. 🎲 Surprise me! (adaptive mix)
 
 **Type a number or skill name:**
 ```
 
+Show options 6-7 only when `voice-doctor.py --json` reports `tts` ok (and `microphone` + `speech-to-text` ok for 7); otherwise list them greyed with "(run /fluent-voice-setup)". Run the doctor once at session start:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-doctor.py" --json
+```
+
 ### 4. Route
 
-- 1-5 → hand off to the matching skill (`fluent-writing`, `fluent-speaking`, `fluent-vocab`, `fluent-reading`, `fluent-review`). Those skills cover everything needed; this skill's job here is just to dispatch.
-- 6 (adaptive mix) → use this skill's own exercise sequencer (below).
+- 1-7 → hand off to the matching skill (`fluent-writing`, `fluent-speaking`, `fluent-vocab`, `fluent-reading`, `fluent-review`, `fluent-listening`, `fluent-pronunciation`). Those skills cover everything needed; this skill's job here is just to dispatch.
+- 8 (adaptive mix) → use this skill's own exercise sequencer (below). When TTS is available, the mix may include 1-2 listening items (speak a sentence with `voice-say.py --quiet`, learner types it) — same rules as `fluent-listening`.
 
-### 5. Adaptive mix (option 6)
+### 5. Adaptive mix (option 8)
 
 Plan a 20-min session:
 
@@ -168,7 +176,9 @@ Save exchange to `/results/fluent-learn-session-{NNN}.md`.
 > 3. 📖 Vocabulary (flashcard drills)
 > 4. 👀 Reading (comprehension)
 > 5. 🔄 Spaced Review (today's due items)
-> 6. 🎲 Surprise me! (adaptive mix)
+> 6. 🎧 Listening (audio dictation & comprehension) 🔊
+> 7. 🎙️ Pronunciation (repeat after me, microphone) 🔊
+> 8. 🎲 Surprise me! (adaptive mix)
 >
 > **Type a number or skill name:**
 

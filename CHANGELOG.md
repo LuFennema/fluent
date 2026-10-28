@@ -2,6 +2,43 @@
 
 All notable changes to Fluent will be documented in this file.
 
+## [0.4.0] — 2026-10-28
+
+### Added
+
+- **Voice features — local text-to-speech, microphone and speech-to-text.**
+  New module `.claude/hooks/fluent_voice.py` with three CLIs: `voice-say.py`
+  (speak text), `voice-listen.py` (record, transcribe, optionally score
+  against an expected sentence) and `voice-doctor.py` (detect backends,
+  print install hints per OS, `--test` plays a sentence). Backends are
+  auto-detected — TTS: macOS `say`, `espeak-ng`/`espeak`/`spd-say`, Windows
+  SAPI, `pyttsx3`; mic: `sounddevice`, `ffmpeg`, `sox`, `arecord`; STT:
+  `faster-whisper`, `openai-whisper`, whisper.cpp — and any engine can be
+  plugged in with `FLUENT_TTS_CMD` / `FLUENT_STT_CMD`. Nothing leaves the
+  machine; recordings are deleted after transcription.
+- **`/fluent-listening`** — audio dictation, gap-fill and comprehension
+  items spoken with TTS; `replay` / `slower` / `skip` controls; errors are
+  logged as sounds, not spellings. Needs TTS only.
+- **`/fluent-pronunciation`** — repeat-after-me with minimal pairs,
+  sentences and shadowing; word-level similarity score from the transcript
+  with articulatory coaching for each missed sound; best-of-two retries.
+- **`/fluent-voice-setup`** — diagnostics and guided install (auto-invokes
+  on "does voice work?").
+- **`/fluent-speaking voice`** — spoken conversation mode: the tutor's
+  lines are played aloud and the learner answers into the microphone;
+  transcripts are evaluated like typed answers plus a light pronunciation
+  note. `preferences.voice: true` in the profile makes it the default.
+- `/fluent-learn` menu gains Listening and Pronunciation options when the
+  audio stack is available; the adaptive mix may include listening items.
+- `tests/test_voice.py` — 22 tests covering language mapping, scoring,
+  backend detection and all three CLIs with simulated engines.
+
+### Changed
+
+- Skill count 12 → 15. New mastery/skill keys `listening` and
+  `pronunciation` flow through the existing `update-db.py` payload.
+- `.gitignore` excludes `data/.voice/` recordings.
+
 ## [0.3.0] — 2026-06-15
 
 ### Added

@@ -2,6 +2,8 @@
 /data/*.json
 /data/*.json.backup-*
 /results/*.md
+# Voice recordings (deleted after transcription, but never commit them)
+/data/.voice/
 # Except the README files which explain the structure
 !/data/README.md
 !/results/README.md

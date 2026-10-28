@@ -1,19 +1,24 @@
 ---
 name: fluent-speaking
-description: Run an interactive typed conversation session simulating spoken practice — free-flowing dialogue, role-plays, and opinion questions prioritizing communication over perfect grammar. Triggered only when the learner types /fluent-speaking. Asks questions one at a time in the target language, evaluates clarity and naturalness first and grammar second, and updates all databases at the end.
+description: Run an interactive conversation session — free-flowing dialogue, role-plays, and opinion questions prioritizing communication over perfect grammar. Typed by default; `/fluent-speaking voice` makes it spoken — the tutor's lines are played with local text-to-speech and the learner answers into the microphone (transcribed locally with Whisper). Triggered only when the learner types /fluent-speaking. Asks questions one at a time in the target language, evaluates clarity and naturalness first and grammar second, and updates all databases at the end.
 allowed-tools: Read, Write, Bash
 disable-model-invocation: true
 ---
 
-# Speaking Practice (Typed)
+# Speaking Practice (Typed or Voice)
 
 ## Overview
 
-Conversational practice through typed dialogue. Unlike `/fluent-writing`, prioritize **communication and naturalness** — grammar errors that don't block meaning are downplayed. Goal: build the learner's confidence to produce target-language output without over-analyzing.
+Conversational practice. Unlike `/fluent-writing`, prioritize **communication and naturalness** — grammar errors that don't block meaning are downplayed. Goal: build the learner's confidence to produce target-language output without over-analyzing.
+
+Two modes:
+
+- **Typed** (default) — the learner types their replies. Works everywhere.
+- **Voice** (`/fluent-speaking voice`, or `preferences.voice: true` in the profile) — every tutor line is **spoken aloud** with the local TTS backend and the learner **answers into the microphone**; the reply is transcribed locally and evaluated like a typed one, plus a light pronunciation note when the transcript shows a sound drifted. This is the closest Fluent gets to a real conversation.
 
 ## When to Use
 
-Trigger this skill only when the learner types `/fluent-speaking`. The skill is gated with `disable-model-invocation: true` — 15-20 min interactive session with DB writes should never start from an ambiguous prompt.
+Trigger this skill only when the learner types `/fluent-speaking` (optionally followed by `voice` or `typed`). The skill is gated with `disable-model-invocation: true` — 15-20 min interactive session with DB writes should never start from an ambiguous prompt.
 
 Skip this skill below A1 mastery 2 — the learner needs a basic word bank and verb conjugations first (run `/fluent-vocab` a few times).
 
@@ -25,7 +30,39 @@ Skip this skill below A1 mastery 2 — the learner needs a basic word bank and v
 python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/read-db.py"
 ```
 
-Need: `learner-profile` (level, target language), `mastery-db.skills_mastery.speaking`.
+Need: `learner-profile` (level, target language, `preferences.voice`), `mastery-db.skills_mastery.speaking`.
+
+### 1b. Decide the mode
+
+Mode = `voice` if the learner typed `/fluent-speaking voice`, or the profile has `preferences.voice: true` and they didn't type `typed`. Otherwise `typed`.
+
+In voice mode, check the audio stack first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-doctor.py" --json
+```
+
+- All three checks ok → voice mode.
+- Only `tts` ok → offer **half-voice**: Claude speaks, learner types. Ask which they prefer.
+- `tts` missing → say what's missing in one line, offer `/fluent-voice-setup`, and ask whether to continue typed. Don't silently downgrade.
+
+**Voice-mode turn mechanics** (used in steps 4 and 6 below):
+
+Speak every target-language line you produce, right after printing it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-say.py" --quiet --lang "{target_language}" "{line}"
+```
+
+Then record the learner's reply instead of waiting for typed input:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}/.claude/hooks/voice-listen.py" --lang "{target_language}" --max-seconds 30
+```
+
+Use `transcript` as "their answer". Show it back verbatim in the feedback (`**What I heard:**`) so a mis-transcription is visible and the learner can say `again`. Controls in voice mode: `again` (re-record), `type` (answer this one by keyboard), `replay`, `typed` (switch mode for the rest of the session). The learner can always type instead of speaking — if typed text arrives, use it.
+
+Voice-mode error handling: a recording error → run the doctor, hand off to `/fluent-voice-setup`; empty transcript or `recording.seconds < 0.4` → "Didn't catch that — say `again`"; `confidence < 0.4` → ask them to repeat once before evaluating.
 
 ### 2. Opening
 
@@ -34,11 +71,12 @@ Need: `learner-profile` (level, target language), `mastery-db.skills_mastery.spe
 
 Hallo {name}!
 
-Today we're practicing **speaking** through typed conversation. I'll ask you questions or give scenarios, you respond naturally in {target_language} — just like a real conversation.
+Today we're practicing **speaking** {through typed conversation | out loud — I'll talk, you answer into your microphone}. I'll ask you questions or give scenarios, you respond naturally in {target_language} — just like a real conversation.
 
-**Focus:** natural expression, fluency, pronunciation (typed)
+**Focus:** natural expression, fluency{, pronunciation (voice mode)}
 **Level:** {CEFR}
 **Duration:** 15-20 min
+{Voice mode: **Controls:** `again` · `type` · `replay` · `typed`}
 
 **Tips:**
 - Think in {target_language}, not {native_language}
@@ -72,8 +110,10 @@ B1+: opinions, comparisons, hypotheticals, complaints, narratives.
 
 {Question in target language}
 
-**Type your answer in {target_language}:**
+**{Type your answer in {target_language}: | 🎙️ Answer out loud:}**
 ```
+
+In voice mode, speak the question (`voice-say.py`) right after printing it, then run `voice-listen.py` and treat the transcript as the answer.
 
 Build the conversation naturally — after 3-4 Qs on one topic, transition: `Interessant! Let's talk about something else...`.
 
@@ -85,13 +125,16 @@ Check in this order:
 2. **Grammar** (0-3 points): verb conjugation, word order, articles. Note but don't belabor.
 3. **Vocabulary** (0-2 points): appropriate word choice, no English mixing.
 
+Voice mode only — add a **pronunciation note** (not scored) when the transcript contains a word that is clearly a near-miss of what they meant (e.g. *pero* for *perro*, *man* for *maan*): one line naming the sound. Skip it when the transcript is plausible as-is; recognizer errors are not the learner's fault. Hesitation markers and self-corrections in the transcript are fluency data, not errors.
+
 Feedback template (variant of `fluent-feedback-formatter`):
 
 ```markdown
 {✅ or 🟡} {one-line encouragement}
 
-**What you said:**
+**What {you said | I heard}:**
 "{their_answer}"
+{Voice mode, if applicable: **Pronunciation note:** *{heard}* for **{meant}** — {sound tip}}
 
 **Communication:** {Clear / Mostly clear / Unclear} ✅
 
@@ -131,6 +174,8 @@ Ready? I'll start...
 **Your turn:**
 ```
 
+In voice mode, role-plays are the highlight — speak each of your lines, record each of theirs, and keep the exchanges short (one or two sentences per turn) so the rhythm stays conversational.
+
 ### 7. Session summary
 
 ```markdown
@@ -160,12 +205,13 @@ Ready? I'll start...
 
 Use the `fluent-db-updater` skill:
 
-- `command_used: "/fluent-speaking"`, `skills_practiced: ["speaking"]`
+- `command_used: "/fluent-speaking"` (or `"/fluent-speaking voice"`), `skills_practiced: ["speaking"]` — add `"pronunciation"` in voice mode when at least one pronunciation note was given
 - `skill_scores.speaking: {exercises: N, correct: count_of_clear_answers, time_minutes}`
-- `errors[]` — only communication-blocking ones (don't flood mistakes-db with minor speaking slips)
+- Voice mode: `skill_scores.pronunciation: {exercises: turns, correct: turns_without_a_note, time_minutes: 0}`
+- `errors[]` — only communication-blocking ones (don't flood mistakes-db with minor speaking slips); voice-mode pronunciation notes go in with category `pronunciation`
 - `focus_next_session[]` — one topic + one pattern
 
-Save exchange to `/results/fluent-speaking-session-{NNN}.md`.
+Save exchange to `/results/fluent-speaking-session-{NNN}.md` (note the mode in the header; in voice mode store the transcripts, not audio — recordings are deleted after transcription).
 
 ## Examples
 
@@ -218,6 +264,8 @@ Learner: "Ik ben Mohammad. Ik kom van Iran maar ik woon nu in Nederland."
 - **Stay in the target language** for questions and transitions. Drop to native only for explanations.
 - **Praise natural expression.** If the learner uses "Nou..." or "Eh..." correctly, call it out — those are fluency markers.
 - **Don't over-correct.** A speaking session with 20 red marks kills confidence.
+- **Voice mode: show the transcript, trust the learner over the recognizer.** If they say the transcript is wrong, take their word and re-record or let them type.
+- **Voice mode: speak every target-language line you print.** Half-spoken sessions feel broken.
 - **Never auto-invoke.** Gated; must fire only on explicit `/fluent-speaking`.
 
 ## Language Reference

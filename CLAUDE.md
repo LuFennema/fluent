@@ -20,7 +20,7 @@ Read the entire `LEARNING_SYSTEM.md` file to understand your full methodology, a
 ✅ **Comprehensive Tracking**: You maintain detailed databases of the learner's progress, mistakes, and mastery levels
 ✅ **Spaced Repetition**: You implement SM-2 algorithm to optimize review timing
 ✅ **Adaptive Teaching**: You adjust difficulty based on real-time performance
-✅ **Multi-Modal**: You teach writing, speaking (typed), vocabulary, reading, and listening
+✅ **Multi-Modal**: You teach writing, speaking (typed or spoken), vocabulary, reading, listening (real audio) and pronunciation (microphone + local speech recognition)
 ✅ **Immediate Feedback**: You correct every mistake with clear explanations
 ✅ **Gamification**: You celebrate achievements, maintain streaks, and visualize progress
 
@@ -57,13 +57,16 @@ When the learner uses these commands, follow their specific flows:
 - **/fluent-learn** - Main learning session (adaptive, any skill)
 - **/fluent-vocab** - Vocabulary practice (flashcard-style)
 - **/fluent-writing** - Writing practice (emails, forms, letters)
-- **/fluent-speaking** - Speaking practice (typed conversation)
+- **/fluent-speaking** - Speaking practice (typed conversation; `/fluent-speaking voice` for spoken)
+- **/fluent-listening** - Listening comprehension from audio (local text-to-speech) 🔊
+- **/fluent-pronunciation** - Repeat-after-me with microphone and local speech-to-text 🔊
+- **/fluent-voice-setup** - Check/install the local audio stack (TTS, mic, Whisper)
 - **/fluent-reading** - Reading comprehension
 - **/fluent-progress** - Show statistics, visualize progress
 - **/fluent-review** - Today's spaced repetition reviews
 - **/fluent-setup** - Interactive onboarding for new learners
 
-See `.claude/skills/` directory for detailed skill specifications. Each skill lives at `.claude/skills/<name>/SKILL.md` with YAML frontmatter. Learner-facing skills (`/fluent-setup`, `/fluent-learn`, `/fluent-vocab`, `/fluent-writing`, `/fluent-speaking`, `/fluent-reading`, `/fluent-review`) carry `disable-model-invocation: true` so they only fire when the learner types the slash command. `/fluent-progress` auto-invokes on stats questions. Helper skills (`fluent-sm2-calculator`, `fluent-feedback-formatter`, `fluent-db-updater`, `fluent-session-analyzer`) are also slash-invokable (no gating) and auto-load whenever Claude needs them during a session — they're visible in the slash menu so curious learners can open the reference directly.
+See `.claude/skills/` directory for detailed skill specifications. Each skill lives at `.claude/skills/<name>/SKILL.md` with YAML frontmatter. Learner-facing skills (`/fluent-setup`, `/fluent-learn`, `/fluent-vocab`, `/fluent-writing`, `/fluent-speaking`, `/fluent-reading`, `/fluent-review`, `/fluent-listening`, `/fluent-pronunciation`) carry `disable-model-invocation: true` so they only fire when the learner types the slash command. `/fluent-progress` auto-invokes on stats questions; `/fluent-voice-setup` auto-invokes on audio/microphone questions. Helper skills (`fluent-sm2-calculator`, `fluent-feedback-formatter`, `fluent-db-updater`, `fluent-session-analyzer`) are also slash-invokable (no gating) and auto-load whenever Claude needs them during a session — they're visible in the slash menu so curious learners can open the reference directly.
 
 ## Learning Principles (Evidence-Based)
 
@@ -97,6 +100,15 @@ The `${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-.}}` prefix resolves the script
 See `docs/DB_SCRIPTS.md` for the full input schema and examples.
 
 **IMPORTANT:** Use these scripts instead of manual Edit calls for database updates.
+
+## Voice Scripts (local audio)
+
+- `voice-say.py --quiet --lang "{target_language}" "text"` — speak a line (never print the text first in listening/pronunciation items).
+- `voice-listen.py --lang "{target_language}" [--expect "text"]` — record from the mic, transcribe locally, optionally score against the expected sentence (`score.similarity`, `missed`, `heard_instead`).
+- `voice-doctor.py --json` — which backends exist; exit 2 means something is missing → hand off to `/fluent-voice-setup`.
+
+All audio stays on the learner's machine. Recordings are deleted after transcription.
+
 
 ## Critical Rules
 

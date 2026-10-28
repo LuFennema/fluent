@@ -1,7 +1,7 @@
 {
   "name": "fluent",
-  "version": "0.3.0",
-  "description": "Fluent — AI Language Learning Kit. Personal AI tutor for any target language. Uses spaced repetition (SM-2), active recall, adaptive difficulty, and tracking across 6 databases. Daily practice: /fluent-review, /fluent-vocab, /fluent-writing, /fluent-speaking, /fluent-reading, /fluent-learn. Start with /fluent-setup.",
+  "version": "0.4.0",
+  "description": "Fluent — AI Language Learning Kit. Personal AI tutor for any target language. Uses spaced repetition (SM-2), active recall, adaptive difficulty, and tracking across 6 databases. Daily practice: /fluent-review, /fluent-vocab, /fluent-writing, /fluent-speaking, /fluent-reading, /fluent-listening, /fluent-pronunciation, /fluent-learn. Voice features (local TTS + Whisper) via /fluent-voice-setup. Start with /fluent-setup.",
   "author": {
     "name": "Mohammad Kermani",
     "url": "https://github.com/m98"
@@ -16,6 +16,10 @@
     "sm2",
     "tutor",
     "flashcards",
+    "pronunciation",
+    "listening",
+    "text-to-speech",
+    "whisper",
     "dutch",
     "spanish",
     "french",
