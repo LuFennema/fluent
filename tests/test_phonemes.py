@@ -167,6 +167,20 @@ class TestScoring(unittest.TestCase):
         self.assertTrue(all(c["near"] for c in r["confusions"]))
         self.assertEqual(r["score"], 75)
 
+    def test_vowel_said_twice_is_long(self):
+        words = [{"word": "おじいさん", "phones": ["o̞", "dʑ", "iː", "s", "ä", "ɴ"]}]
+        self.assertEqual(fp.score_phonemes(words, ["o", "dʒ", "i", "i", "s", "a", "n"], "ja")["score"], 100)
+        self.assertEqual(fp.score_phonemes(words, ["o", "dʒ", "i", "ː", "s", "a", "n"], "ja")["score"], 100)
+        r = fp.score_phonemes(words, ["o", "dʒ", "i", "s", "a", "n"], "ja")   # short i still a near miss
+        self.assertEqual([c["near"] for c in r["confusions"]], [True])
+
+    def test_recognizer_diphthong_token_is_split(self):
+        words = [{"word": "トイレ", "phones": ["t", "o̞", "i", "ɽ", "e̞"]}]
+        self.assertEqual(fp.score_phonemes(words, ["t", "oɪ", "r", "e"], "ja")["score"], 100)
+        oshii = [{"word": "おしい", "phones": ["o̞", "ɕ", "iː"]}]
+        r = fp.score_phonemes(oshii, ["oɪ", "ʃ", "iː"], "ja")   # an i that is not there is still an error
+        self.assertEqual([c["kind"] for c in r["confusions"]], ["insert"])
+
     def test_japanese_allophones_are_not_errors(self):
         words = [{"word": "すみません", "phones": ["s", "ɯᵝ", "m", "i", "m", "ä", "s", "e̞", "ɴ"]}]
         self.assertEqual(fp.score_phonemes(words, list("sumimasen"), "ja")["score"], 100)

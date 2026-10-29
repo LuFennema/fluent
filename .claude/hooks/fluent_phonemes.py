@@ -293,7 +293,7 @@ _EQUIV = {"ɴ": "n"}  # Japanese moraic n
 # language (Japanese u is unrounded ɯ, ひ is ç, し is ɕ, r is a tap with no r/l contrast).
 _LANG_EQUIV = {
     "ja": {"ɯ": "u", "ç": "h", "ɕ": "ʃ", "tɕ": "tʃ", "ʑ": "ʒ", "dʑ": "dʒ",
-           "ɽ": "ɾ", "r": "ɾ", "l": "ɾ",
+           "ɽ": "ɾ", "r": "ɾ", "l": "ɾ", "ɪ": "i", "ʊ": "u",
            # five vowels, no quality contrast: open/close variants are the same vowel
            "ɔ": "o", "ɔː": "oː", "ɛ": "e", "ɛː": "eː", "ɑ": "a", "ɑː": "aː"},
 }
@@ -313,6 +313,34 @@ def _canon(p: str, lang: str | None = None) -> str:
         p = p[0] + "ː"
     p = _EQUIV.get(p, p)
     return _LANG_EQUIV.get(lang or "", {}).get(p, p)
+
+
+def _vowel_parts(p: str) -> list[str]:
+    """A token of two or more vowels (recognizer diphthong oɪ, espeak o̞o̞) as one token per vowel."""
+    parts: list[str] = []
+    for ch in unicodedata.normalize("NFD", p):
+        if unicodedata.category(ch) == "Mn" and parts:
+            parts[-1] += ch
+        else:
+            parts.append(ch)
+    if len(parts) < 2 or any(c[0] not in _VOWELS for c in parts):
+        return [p]
+    return [unicodedata.normalize("NFC", c) for c in parts]
+
+
+def _normalize_phones(phones: list[str], lang: str | None = None) -> list[str]:
+    """Split vowel-sequence tokens, then write a vowel said twice in a row as one long vowel,
+    so `o ɪ` lines up with `o i` and `i i` with `iː` whichever side wrote them which way."""
+    out: list[str] = []
+    for p in (v for tok in phones for v in _vowel_parts(tok)):
+        c = _canon(p, lang)
+        if out and p in ("ː", "ˑ"):  # length mark tokenized on its own
+            out[-1] += p
+        elif out and len(c) == 1 and c in _VOWELS and _canon(out[-1], lang) == c:
+            out[-1] += "ː"
+        else:
+            out.append(p)
+    return out
 
 
 def _near(a: str, b: str, lang: str | None = None) -> bool:
@@ -380,6 +408,8 @@ def score_phonemes(target_words: list[dict], heard: list[str], lang: str | None 
     Near misses (same base phone, different length/diacritic) count half. A run of
     TRAILING_NOISE_PHONES or more extra phones after the target is treated as room
     noise / speech after the item, reported as `extra_after` and not scored."""
+    target_words = [dict(w, phones=_normalize_phones(w["phones"], lang)) for w in target_words]
+    heard = _normalize_phones(heard, lang)
     target = [p for w in target_words for p in w["phones"]]
     owner = [wi for wi, w in enumerate(target_words) for _ in w["phones"]]
     if not target:

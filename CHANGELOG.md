@@ -2,6 +2,22 @@
 
 All notable changes to Fluent will be documented in this file.
 
+## [0.4.4] — 2026-10-29
+
+### Fixed
+
+Phone-level scoring still marked some correct Japanese as wrong. Rescoring a real
+session: おじいさん with a long ii goes from 58 to 83, トイレ from 79 to 91; real
+errors (b→v, s→z, a dropped or extra i) still count.
+
+- **A vowel said twice is long.** The recognizer often writes a long vowel as two
+  tokens (`i i`) or with a bare length mark (`i ː`); both now compare equal to `iː`,
+  on either side.
+- **Vowel-sequence tokens are split.** A recognizer diphthong (`oɪ`) or espeak's
+  doubled vowel (`o̞o̞`) is compared vowel by vowel, so `oɪ` lines up with `o i`.
+  Japanese ɪ / ʊ are the same vowel as i / u.
+- `target_ipa` shows long vowels as `oː` instead of `o̞o̞`.
+
 ## [0.4.3] — 2026-10-28
 
 ### Fixed
