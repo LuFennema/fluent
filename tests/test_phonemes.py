@@ -91,6 +91,15 @@ class TestG2P(unittest.TestCase):
         self.assertGreater(len(g["words"][1]["phones"]), 1)              # phones, not one blob
 
     @unittest.skipUnless(HAVE_G2P, "needs espeak-ng or espeakng-loader")
+    def test_japanese_particle_ha_read_as_wa(self):
+        fp._ja_pron("")  # load the tagger
+        if fp._ja_tagger_cache[0] is None:
+            self.skipTest("needs fugashi + unidic (pip install 'misaki[ja]')")
+        g = fp.phonemize("こんにちは", "ja")
+        self.assertEqual(g["words"][0]["phones"][-2:], ["w", "ä"])
+        self.assertEqual(g["words"][0]["word"], "こんにちは")              # label stays as written
+
+    @unittest.skipUnless(HAVE_G2P, "needs espeak-ng or espeakng-loader")
     def test_unknown_voice_is_clean_error(self):
         g = fp.phonemize("hello", "xx")
         self.assertFalse(g["ok"])
@@ -143,6 +152,39 @@ class TestScoring(unittest.TestCase):
     def test_length_and_nasal_tilde_still_count(self):
         self.assertTrue(fp.score_phonemes([{"word": "x", "phones": ["iː"]}], ["i"])["confusions"])
         self.assertTrue(fp.score_phonemes([{"word": "x", "phones": ["ɐ̃"]}], ["ɐ"])["confusions"])
+
+    def test_near_miss_aligns_to_its_own_sound(self):
+        # o i ɕ iː heard as oː ʃ i: the i of "oi" is missing, the rest are near misses
+        words = [{"word": "おいしい", "phones": ["o̞", "i", "ɕ", "iː"]}]
+        r = fp.score_phonemes(words, ["oː", "ʃ", "i"], "ja")
+        self.assertEqual([(c["expected"], c["kind"]) for c in r["confusions"]],
+                         [("o̞", "substitute"), ("i", "delete"), ("iː", "substitute")])
+
+    def test_espeak_doubled_vowel_is_long(self):
+        words = [{"word": "コーヒー", "phones": ["k", "o̞o̞", "ç", "iː"]}]
+        self.assertEqual(fp.score_phonemes(words, ["k", "oː", "h", "iː"], "ja")["score"], 100)
+        r = fp.score_phonemes(words, ["k", "o", "h", "i"], "ja")   # both vowels short
+        self.assertTrue(all(c["near"] for c in r["confusions"]))
+        self.assertEqual(r["score"], 75)
+
+    def test_japanese_allophones_are_not_errors(self):
+        words = [{"word": "すみません", "phones": ["s", "ɯᵝ", "m", "i", "m", "ä", "s", "e̞", "ɴ"]}]
+        self.assertEqual(fp.score_phonemes(words, list("sumimasen"), "ja")["score"], 100)
+        self.assertLess(fp.score_phonemes(words, list("sumimasen"))["score"], 100)  # only for ja
+
+    def test_japanese_devoiced_final_u_is_fine(self):
+        words = [{"word": "です", "phones": ["d", "e̞", "s", "ɯᵝ"]}]
+        self.assertEqual(fp.score_phonemes(words, ["d", "e", "s"], "ja")["score"], 100)
+        words = [{"word": "ねこ", "phones": ["n", "e̞", "k", "o̞"]}]               # voiced context
+        self.assertLess(fp.score_phonemes(words, ["n", "e", "k"], "ja")["score"], 100)
+
+    def test_trailing_noise_is_reported_not_scored(self):
+        words = [{"word": "man", "phones": ["m", "ɑ", "n"]}]
+        r = fp.score_phonemes(words, ["m", "ɑ", "n", "l", "a", "f", "r"])
+        self.assertEqual(r["score"], 100)
+        self.assertEqual(r["extra_after"], "lafr")
+        r = fp.score_phonemes(words, ["m", "ɑ", "n", "ə"])                      # one extra still counts
+        self.assertEqual(r["score"], 67)
 
     def test_sh_variants_are_near_miss(self):
         r = fp.score_phonemes([{"word": "し", "phones": ["ɕ", "i"]}], ["ʃ", "i"])

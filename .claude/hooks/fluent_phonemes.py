@@ -30,7 +30,6 @@ IPA, which is still useful to show the learner).
 from __future__ import annotations
 
 import ctypes
-import difflib
 import json
 import os
 import re
@@ -144,13 +143,34 @@ def _merge_taps(phones: list[str]) -> list[str]:
     return out
 
 
+_ja_tagger_cache: list = []
+
+
+def _ja_pron(word: str) -> str:
+    """Spoken reading of a Japanese word via fugashi + UniDic (こんにちは -> コンニチワ,
+    particle は -> ワ, を -> オ), or the word itself when fugashi is unavailable."""
+    if not _ja_tagger_cache:
+        try:
+            import fugashi  # type: ignore
+            _ja_tagger_cache.append(fugashi.Tagger())
+        except Exception:
+            _ja_tagger_cache.append(None)
+    tagger = _ja_tagger_cache[0]
+    if tagger is None:
+        return word
+    return "".join(getattr(m.feature, "pron", None) or m.surface for m in tagger(word)
+                   if getattr(m.feature, "pron", None) not in (None, "*") or re.search(r"\w", m.surface))
+
+
 def phonemize(text: str, iso: str, bcp: str | None = None) -> dict:
     """Phonemize `text`. Returns {"ok", "backend", "voice", "words": [{"word", "phones"}], "ipa"}."""
     voice = espeak_voice(iso, bcp or iso)
     # CJK punctuation separates words too (Japanese/Chinese have no spaces)
     words = [w for w in re.split(r"[\s、。，！？・「」『』]+", text.strip()) if re.search(r"\w", w)]
+    # espeak reads kana literally (は = ha even as a particle); give it the spoken reading
+    spoken = [_ja_pron(w) for w in words] if iso == "ja" else words
     try:
-        raw = _phonemize_raw(" ".join(words), voice)
+        raw = _phonemize_raw(" ".join(spoken), voice)
     except Exception as e:
         return {"ok": False, "error": str(e), "backend": g2p_backend(), "voice": voice}
     chunks = [c for c in raw.split(" ") if c.strip("_")]
@@ -262,68 +282,124 @@ def _base(p: str) -> str:
 
 
 # Narrow-transcription marks espeak writes but phoneme recognizers don't (lowered o̞,
-# centralized ä, dental t̪, ...). The nasal tilde stays: it is phonemic (French, Portuguese).
-_KEEP_MARKS = {"̃"}
+# centralized ä, dental t̪, compressed ɯᵝ, ...). The nasal tilde stays: it is phonemic
+# (French, Portuguese). The cedilla is part of the letter ç.
+_KEEP_MARKS = {"̃", "̧"}
+_DROP_LETTERS = {"ᵝ"}
+_VOWELS = set("aeiouyɑɐɒæɛəɘɞɜɪʊʏøœɔɤɯɨʉ")
 # Same sound written differently by espeak and the recognizer.
 _EQUIV = {"ɴ": "n"}  # Japanese moraic n
+# Per language: allophones / notation variants that are not errors for a learner of that
+# language (Japanese u is unrounded ɯ, ひ is ç, し is ɕ, r is a tap with no r/l contrast).
+_LANG_EQUIV = {
+    "ja": {"ɯ": "u", "ç": "h", "ɕ": "ʃ", "tɕ": "tʃ", "ʑ": "ʒ", "dʑ": "dʒ",
+           "ɽ": "ɾ", "r": "ɾ", "l": "ɾ",
+           # five vowels, no quality contrast: open/close variants are the same vowel
+           "ɔ": "o", "ɔː": "oː", "ɛ": "e", "ɛː": "eː", "ɑ": "a", "ɑː": "aː"},
+}
 # Different symbols, close enough to count as a near miss (half an error).
-_NEAR = {frozenset(("ɕ", "ʃ")), frozenset(("ʑ", "ʒ"))}
+_NEAR = {frozenset(("ɕ", "ʃ")), frozenset(("ʑ", "ʒ")), frozenset(("tɕ", "tʃ")), frozenset(("dʑ", "dʒ"))}
+# Japanese high vowels devoice between voiceless consonants and after a final s (です -> des).
+_VOICELESS = {"p", "t", "k", "s", "ʃ", "h", "ɸ", "ts", "tʃ"}
 
 
-def _canon(p: str) -> str:
-    """Phone as compared: narrow-transcription diacritics dropped, length kept."""
+def _canon(p: str, lang: str | None = None) -> str:
+    """Phone as compared: narrow-transcription diacritics dropped, length kept,
+    a doubled vowel (espeak's o̞o̞) written as long (oː)."""
     p = "".join(ch for ch in unicodedata.normalize("NFD", p)
-                if unicodedata.category(ch) != "Mn" or ch in _KEEP_MARKS)
+                if (unicodedata.category(ch) != "Mn" or ch in _KEEP_MARKS) and ch not in _DROP_LETTERS)
     p = unicodedata.normalize("NFC", p)
-    return _EQUIV.get(p, p)
+    if len(p) == 2 and p[0] == p[1] and p[0] in _VOWELS:
+        p = p[0] + "ː"
+    p = _EQUIV.get(p, p)
+    return _LANG_EQUIV.get(lang or "", {}).get(p, p)
 
 
-def _near(a: str, b: str) -> bool:
+def _near(a: str, b: str, lang: str | None = None) -> bool:
+    a, b = _canon(a, lang), _canon(b, lang)
     return _base(a) == _base(b) or frozenset((_base(a), _base(b))) in _NEAR
 
 
-def align_phones(target: list[str], heard: list[str]) -> list[dict]:
-    """Phone-level edit ops: equal / substitute / delete (missed) / insert (extra)."""
-    sm = difflib.SequenceMatcher(a=[_canon(p) for p in target], b=[_canon(p) for p in heard],
-                                 autojunk=False)
+def _devoiced(target: list[str], t: int, word_end: bool, lang: str | None) -> bool:
+    """A dropped Japanese ɯ / i that natives devoice anyway (です, ます, した...)."""
+    if lang != "ja" or _canon(target[t], lang) not in ("u", "i") or t == 0:
+        return False
+    if _canon(target[t - 1], lang) not in _VOICELESS:
+        return False
+    return word_end or (t + 1 < len(target) and _canon(target[t + 1], lang) in _VOICELESS)
+
+
+def align_phones(target: list[str], heard: list[str], lang: str | None = None) -> list[dict]:
+    """Phone-level edit ops: equal / substitute / delete (missed) / insert (extra).
+
+    Minimum-cost alignment (near miss 0.5, other substitution 1, insert/delete 1), so
+    a near miss lines up with the sound it replaced instead of a distant equal phone."""
+    a = [_canon(p, lang) for p in target]
+    b = [_canon(p, lang) for p in heard]
+    n, m = len(a), len(b)
+
+    def sub_cost(i: int, j: int) -> float:
+        return 0.0 if a[i] == b[j] else 0.5 if _near(target[i], heard[j], lang) else 1.0
+
+    d = [[0.0] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        d[i][0] = float(i)
+    for j in range(1, m + 1):
+        d[0][j] = float(j)
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            d[i][j] = min(d[i - 1][j - 1] + sub_cost(i - 1, j - 1), d[i - 1][j] + 1, d[i][j - 1] + 1)
+
     ops: list[dict] = []
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            ops += [{"op": "equal", "t": i, "target": target[i], "heard": target[i]} for i in range(i1, i2)]
-        elif tag == "replace":
-            n = max(i2 - i1, j2 - j1)
-            for k in range(n):
-                ti, hj = i1 + k, j1 + k
-                if ti < i2 and hj < j2:
-                    ops.append({"op": "substitute", "t": ti, "target": target[ti], "heard": heard[hj],
-                                "near": _near(target[ti], heard[hj])})
-                elif ti < i2:
-                    ops.append({"op": "delete", "t": ti, "target": target[ti], "heard": None})
-                else:
-                    ops.append({"op": "insert", "t": i2 - 1, "target": None, "heard": heard[hj]})
-        elif tag == "delete":
-            ops += [{"op": "delete", "t": i, "target": target[i], "heard": None} for i in range(i1, i2)]
-        elif tag == "insert":
-            ops += [{"op": "insert", "t": max(i1 - 1, 0), "target": None, "heard": heard[j]} for j in range(j1, j2)]
+    i, j = n, m
+    while i or j:
+        if i and j and d[i][j] == d[i - 1][j - 1] + sub_cost(i - 1, j - 1):
+            i, j = i - 1, j - 1
+            if a[i] == b[j]:
+                ops.append({"op": "equal", "t": i, "target": target[i], "heard": heard[j]})
+            else:
+                ops.append({"op": "substitute", "t": i, "target": target[i], "heard": heard[j],
+                            "near": _near(target[i], heard[j], lang)})
+        elif i and d[i][j] == d[i - 1][j] + 1:
+            i -= 1
+            ops.append({"op": "delete", "t": i, "target": target[i], "heard": None})
+        else:
+            j -= 1
+            ops.append({"op": "insert", "t": max(i - 1, 0), "target": None, "heard": heard[j]})
+    ops.reverse()
     return ops
 
 
-def score_phonemes(target_words: list[dict], heard: list[str]) -> dict:
+TRAILING_NOISE_PHONES = 3
+
+
+def score_phonemes(target_words: list[dict], heard: list[str], lang: str | None = None) -> dict:
     """Score heard phones against target words [{"word","phones"}].
 
     Returns per-word accuracy and a list of confusions the tutor can coach on.
-    Near misses (same base phone, different length/diacritic) count half."""
+    Near misses (same base phone, different length/diacritic) count half. A run of
+    TRAILING_NOISE_PHONES or more extra phones after the target is treated as room
+    noise / speech after the item, reported as `extra_after` and not scored."""
     target = [p for w in target_words for p in w["phones"]]
     owner = [wi for wi, w in enumerate(target_words) for _ in w["phones"]]
     if not target:
         return {"score": 0, "error": "no target phones"}
-    ops = align_phones(target, heard)
+    word_end = {i for i, wi in enumerate(owner) if i + 1 == len(owner) or owner[i + 1] != wi}
+    ops = align_phones(target, heard, lang)
+    tail = 0
+    while tail < len(ops) and ops[len(ops) - 1 - tail]["op"] == "insert":
+        tail += 1
+    extra_after = heard[len(heard) - tail:] if tail >= TRAILING_NOISE_PHONES else []
+    if extra_after:
+        ops = ops[:len(ops) - tail]
     errors = 0.0
     per_word = [{"word": w["word"], "target_ipa": "".join(w["phones"]), "phones": len(w["phones"]),
                  "errors": 0.0, "issues": []} for w in target_words]
     confusions: list[dict] = []
     for o in ops:
         if o["op"] == "equal":
+            continue
+        if o["op"] == "delete" and _devoiced(target, o["t"], o["t"] in word_end, lang):
             continue
         cost = 0.5 if o.get("near") else 1.0
         errors += cost
@@ -349,7 +425,8 @@ def score_phonemes(target_words: list[dict], heard: list[str]) -> dict:
         "target_phones": len(target),
         "heard_phones": len(heard),
         "target_ipa": " ".join("".join(w["phones"]) for w in target_words),
-        "heard_ipa": "".join(heard),
+        "heard_ipa": "".join(heard[:len(heard) - len(extra_after)]),
+        "extra_after": "".join(extra_after),
         "per_word": per_word,
         "confusions": confusions,
         "top_confusions": [{"expected": e, "heard": h, "count": n} for (e, h), n in top],
@@ -366,7 +443,7 @@ def analyze(audio_file: str | Path, expected: str, iso: str, bcp: str | None = N
     if not rec["ok"]:
         return {"available": False, "reason": f"recognizer: {rec['error']}",
                 "target_ipa": g2p["ipa"], "g2p_backend": g2p["backend"]}
-    res = score_phonemes(g2p["words"], rec["phones"])
+    res = score_phonemes(g2p["words"], rec["phones"], iso)
     res.update({"available": True, "g2p_backend": g2p["backend"], "recognizer": rec["backend"]})
     return res
 

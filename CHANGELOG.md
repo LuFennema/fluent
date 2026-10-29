@@ -2,6 +2,30 @@
 
 All notable changes to Fluent will be documented in this file.
 
+## [0.4.3] — 2026-10-28
+
+### Fixed
+
+Phone-level scoring marked correct Japanese as wrong. Rescoring a real session:
+correct takes now score 100, real errors (o→a, short vowels, b→v, a dropped
+vowel) still count.
+
+- **Japanese is phonemized from its spoken reading** (fugashi + UniDic `pron`),
+  so particle は / こんにちは are /wa/ and を is /o/; the word label stays as
+  written.
+- **Long vowels:** espeak's doubled vowel (o̞o̞, ää) is compared as long (oː).
+- **Japanese allophones are not errors:** ɯ/u, ç/h, ɕ/ʃ, tɕ/tʃ, ʑ/ʒ, dʑ/dʒ, the
+  tap r (ɽ/ɾ/r/l), and open/close variants of the five vowels. Scoring is
+  language-aware (`score_phonemes(..., lang)`); other languages are unchanged.
+- **Devoiced ɯ / i** after a voiceless consonant (です → des, ます → mas) is not
+  a missed sound.
+- **Trailing noise:** three or more extra phones after the target are reported
+  as `extra_after` and not scored.
+- **Alignment:** difflib replaced by a minimum-cost alignment (near miss 0.5,
+  other mismatch 1, insert/delete 1), so a near miss lines up with the sound it
+  replaced. `ç` keeps its cedilla, and `ᵝ` is dropped.
+- tɕ/tʃ and dʑ/dʒ count as near misses in every language.
+
 ## [0.4.2] — 2026-10-28
 
 ### Fixed
